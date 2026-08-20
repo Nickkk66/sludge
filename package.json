@@ -1,0 +1,41 @@
+{
+  "name": "marginalia",
+  "productName": "Marginalia",
+  "version": "1.0.0",
+  "description": "Offline PDF reader with highlights, notes, tags, and a local AI that reads your PDF and your notes.",
+  "main": "src/main/main.js",
+  "author": "Nickkk66",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "postinstall": "node scripts/vendor-pdfjs.js",
+    "vendor": "node scripts/vendor-pdfjs.js",
+    "dist": "electron-builder --mac"
+  },
+  "dependencies": {
+    "pdfjs-dist": "4.10.38"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.nickkk66.marginalia",
+    "productName": "Marginalia",
+    "files": [
+      "src/**/*",
+      "vendor/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  }
+}
