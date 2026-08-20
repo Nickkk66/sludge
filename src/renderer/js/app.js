@@ -12,6 +12,10 @@ import { initSearch, runSearch, clearSearch, stepResult } from './search.js';
 import { showLibrary, hideLibrary, makeCover, renderRecent } from './library.js';
 import { initAi, refreshAiStatus, resetAiThread } from './ai.js';
 import { exportNotes } from './exporter.js';
+import { initSpeech, speech, play as speechPlay, pause as speechPause, stop as speechStop,
+         toggle as speechToggle, skip as speechSkip, setRate, setVoice, getVoices, readingState } from './speech.js';
+import { initDocNotes, getMarkdown, setMarkdown, togglePreview, exportDocument } from './docnotes.js';
+import { initFocus, restoreFocus, openPicker } from './focus.js';
 
 /* ------------------------------------------------------------ boot */
 
@@ -21,6 +25,7 @@ async function boot() {
   state.color = state.settings.defaultColor || COLORS[2].hex;
   state.autoNote = state.settings.autoNote !== false;
   applyTheme(state.theme);
+  applyInvert(state.settings.invert === true);
 
   initViewer();
   initAnnotationUi();
@@ -29,6 +34,11 @@ async function boot() {
   initSearch();
   initOutline();
   initAi();
+  initSpeech();
+  initDocNotes();
+  initFocus();
+  wireSpeechBar();
+  wireDocument();
   buildSwatches();
   wireChrome();
   wireKeyboard();
@@ -37,6 +47,7 @@ async function boot() {
   $('#autoNote').checked = state.autoNote;
   await renderRecent();
   refreshAiStatus({ autostart: false });
+  restoreFocus();
 
   window.api.onOpenFile((path) => openDocument(path));
   window.api.onMenu(handleMenu);
@@ -72,6 +83,8 @@ async function openDocument(filePath) {
     $('#noteFilter').value = '';
     clearSearch();
     resetAiThread();
+    speechStop();
+    setMarkdown((doc.document && doc.document.markdown) || '');
 
     $('#welcome').hidden = true;
     $('#docTab').hidden = false;
@@ -135,6 +148,8 @@ function updateSidecarHint(path) {
 
 async function closeDocument() {
   await saveNow();
+  speechStop();
+  setMarkdown('');
   destroy();
   currentDoc = null;
   state.docId = state.filePath = state.docName = null;
@@ -169,7 +184,8 @@ async function saveNow() {
     const pos = getPosition();
     await window.api.saveDoc(state.filePath, state.docId, {
       annotations: state.annotations,
-      lastPosition: pos
+      lastPosition: pos,
+      document: { markdown: getMarkdown(), updated: new Date().toISOString() }
     });
     await window.api.library.upsert({
       docId: state.docId,
@@ -193,6 +209,7 @@ on('annotations:changed', () => {
   scheduleSave();
 });
 on('scroll:idle', () => scheduleSave());
+on('document:changed', () => scheduleSave());
 window.addEventListener('beforeunload', () => { if (state.filePath) saveNow(); });
 
 /* ------------------------------------------------------------ chrome */
@@ -227,14 +244,51 @@ function openLeftPanel(view) {
   const already = $(`#rail .rail-btn[data-panel="${view}"]`).classList.contains('active');
   if (already && !main.classList.contains('left-collapsed')) {
     main.classList.add('left-collapsed');
+    syncRibbonState();
     return;
   }
   main.classList.remove('left-collapsed');
   $$('#rail .rail-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === view));
   $$('#leftPanel .panel-view').forEach((p) => p.classList.toggle('active', p.dataset.view === view));
-  $('#leftPanelTitle').textContent =
-    { thumbnails: 'Thumbnails', outline: 'Chapters', search: 'Search', notes: 'Notes' }[view] || view;
+  $('#leftPanelTitle').textContent = PANEL_TITLES[view] || view;
   if (view === 'search') setTimeout(() => $('#searchInput').focus(), 40);
+  if (view === 'notes') renderSideNotesSummary();
+  syncRibbonState();
+}
+
+const PANEL_TITLES = { thumbnails: 'Pages', outline: 'Chapters', search: 'Search', notes: 'Notes' };
+
+/** Show which panels are open, so the ribbon reflects the actual state. */
+function syncRibbonState() {
+  const leftOpen = !$('#main').classList.contains('left-collapsed');
+  const leftView = ($$('#rail .rail-btn').find((b) => b.classList.contains('active')) || {}).dataset;
+  const left = leftOpen && leftView ? leftView.panel : null;
+
+  const rightOpen = $('#main').classList.contains('right-open');
+  const rightTab = $$('#rightPanel .rt').find((b) => b.classList.contains('active'));
+  const right = rightOpen && rightTab ? rightTab.dataset.right : null;
+
+  const set = (sel, on) => $$(sel).forEach((b) => b && b.classList.toggle('active', on));
+  set('#btnThumbs', left === 'thumbnails');
+  set('#btnOutline', left === 'outline');
+  set('#btnFind', left === 'search');
+  set('#btnNotesPanel, #btnNotesPanel2', right === 'notes');
+  set('#btnAsk, #btnAsk2', right === 'ai');
+  set('#btnDoc', right === 'document');
+}
+
+function renderSideNotesSummary() {
+  const box = $('#sideNotesSummary');
+  if (!box) return;
+  const n = state.annotations.length;
+  if (!n) {
+    box.innerHTML = 'No notes yet. Highlight some text or drop a pin and they collect here.';
+    return;
+  }
+  const pages = new Set(state.annotations.map((a) => a.page)).size;
+  const tagged = state.annotations.filter((a) => (a.tags || []).length).length;
+  box.innerHTML = `<b>${n}</b> note${n === 1 ? '' : 's'} across <b>${pages}</b> page${pages === 1 ? '' : 's'}` +
+    (tagged ? `, <b>${tagged}</b> tagged.` : '.');
 }
 
 function openRightPanel(view) {
@@ -247,6 +301,8 @@ function openRightPanel(view) {
     refreshAiStatus();
     setTimeout(() => $('#aiInput').focus(), 60);
   }
+  if (view === 'document') setTimeout(() => $('#docEditor').focus(), 60);
+  syncRibbonState();
 }
 
 const toggleRightPanel = (view) => {
@@ -260,6 +316,38 @@ const toggleRightPanel = (view) => {
 function closeRightPanel() {
   $('#main').classList.remove('right-open');
   $('#rightPanel').classList.add('hidden');
+  syncRibbonState();
+}
+
+function applyInvert(on) {
+  state.invert = !!on;
+  $('#viewerWrap').classList.toggle('invert-pdf', state.invert);
+  window.api.settings.set({ invert: state.invert }).catch(() => {});
+}
+
+function showThemeMenu(x, y) {
+  document.querySelectorAll('.ctx-menu').forEach((n) => n.remove());
+  const menu = el('div', { class: 'ctx-menu' },
+    el('button', {
+      class: `ctx-item${state.invert ? ' on' : ''}`,
+      onclick: () => { applyInvert(!state.invert); menu.remove(); toast(state.invert ? 'PDF colours inverted' : 'PDF colours normal'); }
+    }, el('span', { class: 'ctx-check' }, state.invert ? '✓' : ''), 'Invert PDF colours'),
+    el('button', {
+      class: 'ctx-item',
+      onclick: () => { $('#themeToggle').click(); menu.remove(); }
+    }, el('span', { class: 'ctx-check' }, ''), state.theme === 'dark' ? 'Switch to day theme' : 'Switch to night theme')
+  );
+  document.body.append(menu);
+  const w = menu.offsetWidth;
+  const h = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, x - w + 20))}px`;
+  menu.style.top = `${Math.max(8, y - h - 8)}px`;
+  const close = (ev) => {
+    if (menu.contains(ev.target)) return;
+    menu.remove();
+    document.removeEventListener('mousedown', close);
+  };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
 }
 
 function applyTheme(theme) {
@@ -299,7 +387,14 @@ function wireChrome() {
   $('#btnOutline').addEventListener('click', () => openLeftPanel('outline'));
   ['#btnFind', '#btnFindTop'].forEach((s) => $(s).addEventListener('click', () => openLeftPanel('search')));
   $$('#rail .rail-btn').forEach((b) => b.addEventListener('click', () => openLeftPanel(b.dataset.panel)));
-  $('#leftPanelClose').addEventListener('click', () => $('#main').classList.add('left-collapsed'));
+  $('#leftPanelClose').addEventListener('click', () => {
+    $('#main').classList.add('left-collapsed');
+    syncRibbonState();
+  });
+
+  // The left Notes view mirrors the ribbon's note actions, so both routes work.
+  $('#sideAllNotes').addEventListener('click', () => openRightPanel('notes'));
+  $('#sideExport').addEventListener('click', exportNotes);
 
   ['#btnNotesPanel', '#btnNotesPanel2'].forEach((s) => $(s).addEventListener('click', () => toggleRightPanel('notes')));
   ['#btnAsk', '#btnAsk2', '#btnAiTop'].forEach((s) => $(s).addEventListener('click', () => toggleRightPanel('ai')));
@@ -341,10 +436,19 @@ function wireChrome() {
     state.settings = await window.api.settings.set({ theme: next });
   });
 
+  // Right-click offers inverting the page itself — dark app chrome doesn't help
+  // when the PDF is still a white rectangle.
+  $('#themeToggle').addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showThemeMenu(e.clientX, e.clientY);
+  });
+
   on('page:changed', (page) => {
     $('#pageInput').value = String(page);
     highlightCurrentThumb(page);
   });
+  on('annotations:changed', () => renderSideNotesSummary());
+  syncRibbonState();
   on('zoom:changed', (mode) => {
     const sel = $('#zoomSelect');
     if (![...sel.options].some((o) => o.value === mode)) {
@@ -358,6 +462,87 @@ function wireChrome() {
   });
   on('panel:open', (view) => openRightPanel(view));
   on('panel:right', (view) => openRightPanel(view));
+}
+
+/* ------------------------------------------------------------ read aloud */
+
+function wireSpeechBar() {
+  const bar = $('#speechbar');
+
+  const openBar = () => {
+    bar.hidden = false;
+    fillVoices();
+  };
+
+  $('#btnRead').addEventListener('click', () => {
+    if (!state.pdf) return toast('Open a PDF first.');
+    openBar();
+    speechToggle();
+  });
+
+  $('#spPlay').addEventListener('click', () => speechToggle());
+  $('#spPrev').addEventListener('click', () => speechSkip(-1));
+  $('#spNext').addEventListener('click', () => speechSkip(1));
+  $('#spStop').addEventListener('click', () => speechStop());
+  $('#speechbarClose').addEventListener('click', () => { speechStop(); bar.hidden = true; });
+
+  const rate = $('#spRate');
+  rate.value = String(speech.rate);
+  $('#spRateLabel').textContent = `${Number(speech.rate).toFixed(2).replace(/0$/, '')}×`;
+  rate.addEventListener('input', () => {
+    $('#spRateLabel').textContent = `${Number(rate.value).toFixed(2).replace(/0$/, '')}×`;
+  });
+  rate.addEventListener('change', () => setRate(rate.value));
+
+  $('#spVoice').addEventListener('change', (e) => setVoice(e.target.value));
+  // Populate up front so the picker is ready the first time the bar appears.
+  fillVoices();
+  $('#spFollow').addEventListener('change', (e) => { speech.followScroll = e.target.checked; });
+
+  on('speech:voices', fillVoices);
+  on('speech:changed', () => {
+    if (speech.playing || speech.paused) {
+      if (bar.hidden) fillVoices();
+      bar.hidden = false;
+    }
+    $('#spPlay').innerHTML = speech.playing
+      ? '<svg viewBox="0 0 24 24"><path d="M8 5.5h3v13H8zM13 5.5h3v13h-3z"/></svg>'
+      : '<svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>';
+    $('#spPlay').classList.toggle('on', speech.playing);
+    $('#btnRead').classList.toggle('active', speech.playing || speech.paused);
+    const st = readingState();
+    $('#spNow').textContent = st.text ? `p. ${st.page} · ${st.text.slice(0, 90)}` : '';
+  });
+}
+
+function fillVoices() {
+  const list = getVoices();
+  const select = $('#spVoice');
+  if (!list.length) {
+    select.replaceChildren(el('option', {}, 'System default'));
+    return;
+  }
+  select.replaceChildren(...list.map((v) => el('option', {
+    value: v.voiceURI,
+    selected: v.voiceURI === speech.voiceURI
+  }, `${v.name} (${v.lang})`)));
+}
+
+/* ------------------------------------------------------------ document */
+
+function wireDocument() {
+  $('#btnDoc').addEventListener('click', () => toggleRightPanel('document'));
+  $('#btnDocSnap').addEventListener('click', toggleSplit);
+  $('#rightSnap').addEventListener('click', toggleSplit);
+}
+
+/** Widen the side panel to half the window, for writing while reading. */
+function toggleSplit() {
+  const main = $('#main');
+  if (!main.classList.contains('right-open')) openRightPanel('document');
+  const on = main.classList.toggle('right-wide');
+  $('#btnDocSnap').classList.toggle('active', on);
+  window.api.settings.set({ splitView: on }).catch(() => {});
 }
 
 /* ------------------------------------------------------------ keyboard */
@@ -384,7 +569,13 @@ function wireKeyboard() {
       case 'v': setTool('select'); break;
       case 'h': if (!e.metaKey) setTool('highlight'); break;
       case 'p': if (!e.metaKey) setTool('pin'); break;
-      case ' ': if (!e.metaKey) setTool('hand'); break;
+      case 'r': if (!e.metaKey) { $('#btnRead').click(); } break;
+      case ' ':
+        e.preventDefault();
+        // Space controls read-aloud while it's running, and the hand tool otherwise.
+        if (speech.playing || speech.paused) speechToggle();
+        else setTool(state.tool === 'hand' ? 'select' : 'hand');
+        break;
       default: break;
     }
   });
@@ -406,6 +597,10 @@ function handleMenu(action) {
     'zoom:out': () => stepZoom(-1),
     'zoom:fit': () => setZoom('fit'),
     theme: () => $('#themeToggle').click(),
+    read: () => $('#btnRead').click(),
+    document: () => toggleRightPanel('document'),
+    split: toggleSplit,
+    focus: openPicker,
     'tool:highlight': () => setTool('highlight'),
     'tool:pin': () => setTool('pin'),
     'tool:select': () => setTool('select')

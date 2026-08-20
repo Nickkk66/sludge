@@ -1,6 +1,7 @@
 import { $, el, escapeHtml, debounce } from './util.js';
-import { state, emit } from './state.js';
+import { state, emit, on, COLORS } from './state.js';
 import { goToPage, scrollToSpot, refreshAnnotations, getPageEl, isRendered, renderPage } from './viewer.js';
+import { flattenTextLayer } from './textmap.js';
 
 const MAX_RESULTS = 400;
 
@@ -12,6 +13,7 @@ export function runSearch(query) {
 
   const meta = $('#searchMeta');
   const box = $('#searchResults');
+  renderSearchColorFilter();
 
   if (q.length < 2) {
     box.replaceChildren();
@@ -25,9 +27,15 @@ export function runSearch(query) {
   }
 
   const needle = normalize(q);
+  // Optional narrowing: only pages the reader has marked in these colours.
+  const colorPages = state.searchColorFilter.size
+    ? new Set(state.annotations.filter((a) => state.searchColorFilter.has(a.color)).map((a) => a.page))
+    : null;
+
   const results = [];
   for (const p of state.pageText) {
     if (!p || !p.text) continue;
+    if (colorPages && !colorPages.has(p.page)) continue;
     const flat = p.text.replace(/\s+/g, ' ');
     const hay = flat.toLowerCase();
     let from = 0;
@@ -62,8 +70,15 @@ export function runSearch(query) {
     el('div', { class: 'sr-text', html: r.snippet })
   )));
 
-  if (results.length) goToResult(0);
-  else refreshAnnotations();
+  if (results.length) {
+    // Jump to the match nearest where the reader already is, not to page 1 —
+    // in an 800-page book the first hit is usually the index or contents.
+    let start = results.findIndex((r) => r.page >= state.currentPage);
+    if (start < 0) start = 0;
+    goToResult(start);
+  } else {
+    refreshAnnotations();
+  }
 }
 
 function snippetAround(text, at, len) {
@@ -86,14 +101,26 @@ export async function goToResult(i) {
   await renderPage(r.page);
   // The text layer needs a frame to settle before ranges measure correctly.
   await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 60)));
-  const rects = locateInTextLayer(r.page, state.findQuery, r.occurrence);
-  if (rects && rects.length) {
-    r.rects = rects;
-    refreshAnnotations(r.page);
-    scrollToSpot(r.page, rects[0].y);
-  } else {
-    refreshAnnotations(r.page);
+  computeHitsForPage(r.page);
+  refreshAnnotations(r.page);
+  if (r.rects && r.rects.length) scrollToSpot(r.page, r.rects[0].y);
+}
+
+/**
+ * Resolve every match on one page to on-page rectangles. Called when a page
+ * renders so all hits are visible, not just the one being stepped through.
+ */
+export function computeHitsForPage(page) {
+  if (!state.findQuery || !state.findResults.length) return;
+  const pageEl = getPageEl(page);
+  if (!pageEl || !pageEl.querySelector('.textLayer')) return;
+  let changed = false;
+  for (const r of state.findResults) {
+    if (r.page !== page || r.rects) continue;
+    const rects = locateInTextLayer(page, state.findQuery, r.occurrence);
+    if (rects && rects.length) { r.rects = rects; changed = true; }
   }
+  return changed;
 }
 
 export function stepResult(delta) {
@@ -112,15 +139,13 @@ function locateInTextLayer(page, query, occurrence) {
   const layer = pageEl.querySelector('.textLayer');
   if (!layer) return null;
 
-  const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
-  const nodes = [];
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
-  if (!nodes.length) return null;
+  const mapped = flattenTextLayer(layer);
+  if (!mapped) return null;
 
   // The cached index collapses runs of whitespace; compare on the same footing.
   // The text layer breaks lines into separate spans, so match against a
   // whitespace-collapsed copy and map positions back through `map`.
-  const { flat, map } = flatten(nodes);
+  const { flat, map } = mapped;
   const hay = flat.toLowerCase();
   const needle = normalize(query);
   let at = -1;
@@ -155,30 +180,36 @@ function locateInTextLayer(page, query, occurrence) {
 
 const normalize = (s) => String(s).replace(/\s+/g, ' ').trim().toLowerCase();
 
-/**
- * Collapse the text layer into one whitespace-normalized string, keeping a
- * position map back to the original (node, offset) so a match can become a Range.
- * Span boundaries count as a space, which is how the page reads.
- */
-function flatten(nodes) {
-  let flat = '';
-  const map = [];
-  let pendingSpace = false;
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
-    const value = node.nodeValue || '';
-    for (let j = 0; j < value.length; j++) {
-      const ch = value[j];
-      if (/\s/.test(ch)) { pendingSpace = flat.length > 0; continue; }
-      if (pendingSpace) { flat += ' '; map.push({ node, offset: j }); pendingSpace = false; }
-      flat += ch;
-      map.push({ node, offset: j });
-    }
-    // Separate spans read as separate words.
-    if (i < nodes.length - 1 && flat.length) pendingSpace = true;
+/** Colour chips that narrow results to pages the reader has highlighted. */
+function renderSearchColorFilter() {
+  const row = $('#searchColors');
+  if (!row) return;
+  const used = new Map();
+  for (const a of state.annotations) used.set(a.color, (used.get(a.color) || 0) + 1);
+  const chips = COLORS.filter((c) => used.has(c.hex));
+  if (!chips.length) {
+    row.replaceChildren();
+    return;
   }
-  map.push({ node: nodes[nodes.length - 1], offset: (nodes[nodes.length - 1].nodeValue || '').length });
-  return { flat, map };
+  row.replaceChildren(
+    el('span', { class: 'sc-label' }, 'only pages I highlighted:'),
+    ...chips.map((c) => el('button', {
+      class: `fchip${state.searchColorFilter.has(c.hex) ? ' on' : ''}`,
+      title: `${c.name} highlights`,
+      onclick: () => {
+        state.searchColorFilter.has(c.hex)
+          ? state.searchColorFilter.delete(c.hex)
+          : state.searchColorFilter.add(c.hex);
+        runSearch($('#searchInput').value);
+      }
+    }, el('i', { class: 'dot', style: { background: c.hex } }), String(used.get(c.hex)))),
+    state.searchColorFilter.size
+      ? el('button', {
+          class: 'sc-clear',
+          onclick: () => { state.searchColorFilter.clear(); runSearch($('#searchInput').value); }
+        }, 'clear')
+      : null
+  );
 }
 
 export function clearSearch() {
@@ -192,6 +223,10 @@ export function clearSearch() {
 }
 
 export function initSearch() {
+  // A page that renders after a search still needs its matches drawn.
+  on('page:rendered', (page) => {
+    if (computeHitsForPage(page)) refreshAnnotations(page);
+  });
   const input = $('#searchInput');
   input.addEventListener('input', debounce((e) => runSearch(e.target.value), 260));
   input.addEventListener('keydown', (e) => {

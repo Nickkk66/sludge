@@ -36,10 +36,11 @@ export async function refreshAiStatus({ autostart = true } = {}) {
     const chosen = info.models.some((m) => m.name === saved) ? saved : info.suggested;
     state.aiModel = chosen;
 
-    select.replaceChildren(...info.models.map((m) => el('option', {
+    const ranked = [...info.models].sort((a, b) => (a.size || 0) - (b.size || 0));
+    select.replaceChildren(...ranked.map((m) => el('option', {
       value: m.name,
       selected: m.name === chosen
-    }, `${m.name}${m.params ? `  (${m.params})` : ''}`)));
+    }, describeModel(m))));
 
     status.className = 'ai-status ok';
     status.innerHTML = '<i></i> ready · offline';
@@ -52,6 +53,34 @@ export async function refreshAiStatus({ autostart = true } = {}) {
     status.innerHTML = `<i></i> ${escapeHtml(String(err.message || err))}`;
     return { running: false, models: [] };
   }
+}
+
+/**
+ * Model names like "dolphin-phi:latest" say nothing about what to expect.
+ * Label them by the trade-off that actually matters on this machine: how
+ * sharp the answers are versus how long you wait.
+ */
+export function describeModel(m) {
+  const b = paramBillions(m);
+  let label;
+  if (b === null) label = 'Local model';
+  else if (b < 0.7) label = 'Quickest, roughest';
+  else if (b < 2.5) label = 'Quick, simple answers';
+  else if (b < 5) label = 'Balanced — recommended';
+  else if (b < 10) label = 'Smartest, slow';
+  else label = 'Smartest, very slow';
+  const size = m.size ? `${(m.size / 1e9).toFixed(1)} GB` : '';
+  return `${label} · ${m.name}${size ? ` (${size})` : ''}`;
+}
+
+function paramBillions(m) {
+  const src = String(m.params || m.name || '');
+  const g = src.match(/([\d.]+)\s*B\b/i);
+  if (g) return parseFloat(g[1]);
+  const mm = src.match(/([\d.]+)\s*M\b/i);
+  if (mm) return parseFloat(mm[1]) / 1000;
+  if (m.size) return m.size / 6e8;   // rough: q4 weights ≈ 0.6 GB per billion
+  return null;
 }
 
 const setFoot = (text) => { $('#aiFoot').textContent = text || ''; };

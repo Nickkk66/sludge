@@ -19,6 +19,7 @@ export const state = {
   docName: null,
   numPages: 0,
   outline: null,
+  chapters: [],
 
   // view
   tool: 'select',           // select | hand | highlight | pin
@@ -28,6 +29,7 @@ export const state = {
   scale: 1,
   currentPage: 1,
   theme: 'dark',
+  invert: false,
 
   // data
   annotations: [],
@@ -44,6 +46,7 @@ export const state = {
   findQuery: '',
   findResults: [],
   findCurrent: -1,
+  searchColorFilter: new Set(),
 
   // ai
   aiModel: null,
@@ -113,16 +116,62 @@ export function usedColors() {
   return [...counts.entries()];
 }
 
+/**
+ * Parse the notes filter box. Beyond plain text it understands:
+ *   #exam      a tag (prefix match, so #ex finds #exam)
+ *   p112       a page
+ *   13-14      a page range
+ *   1776       a page OR any note mentioning it
+ * Several terms combine with AND.
+ */
+export function parseNoteQuery(raw) {
+  const tokens = String(raw || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const q = { tags: [], pages: [], ranges: [], loose: [], text: [] };
+  for (const t of tokens) {
+    let m;
+    if (t.startsWith('#')) {
+      if (t.length > 1) q.tags.push(t.slice(1));
+    } else if ((m = t.match(/^p?\.?(\d+)\s*[-–—]\s*p?\.?(\d+)$/))) {
+      q.ranges.push([Math.min(+m[1], +m[2]), Math.max(+m[1], +m[2])]);
+    } else if ((m = t.match(/^(?:p|pg|page)\.?(\d+)$/))) {
+      q.pages.push(+m[1]);
+    } else if (/^\d+$/.test(t)) {
+      // A bare number is ambiguous — treat it as a page or as text.
+      q.loose.push(+t);
+    } else {
+      q.text.push(t);
+    }
+  }
+  return q;
+}
+
+function matchesQuery(a, q) {
+  const hay = `${a.note || ''} ${a.quote || ''} ${(a.tags || []).join(' ')}`.toLowerCase();
+  const tags = (a.tags || []).map((t) => t.toLowerCase());
+
+  for (const t of q.tags) if (!tags.some((x) => x.startsWith(t))) return false;
+  for (const w of q.text) if (!hay.includes(w)) return false;
+
+  const wantsPage = q.pages.length || q.ranges.length;
+  if (wantsPage) {
+    const hit = q.pages.includes(a.page) || q.ranges.some(([lo, hi]) => a.page >= lo && a.page <= hi);
+    if (!hit) return false;
+  }
+  for (const n of q.loose) {
+    if (a.page !== n && !hay.includes(String(n))) return false;
+  }
+  return true;
+}
+
 /** Notes passing the current filter set, ordered by page then vertical position. */
 export function filteredAnnotations() {
-  const q = state.noteQuery.trim().toLowerCase();
+  const q = parseNoteQuery(state.noteQuery);
+  const empty = !q.tags.length && !q.text.length && !q.pages.length && !q.ranges.length && !q.loose.length;
   return state.annotations
     .filter((a) => {
       if (state.colorFilter.size && !state.colorFilter.has(a.color)) return false;
       if (state.tagFilter.size && !(a.tags || []).some((t) => state.tagFilter.has(t))) return false;
-      if (!q) return true;
-      const hay = `${a.note || ''} ${a.quote || ''} ${(a.tags || []).join(' ')}`.toLowerCase();
-      return hay.includes(q);
+      return empty ? true : matchesQuery(a, q);
     })
     .sort((a, b) => a.page - b.page || topOf(a) - topOf(b));
 }

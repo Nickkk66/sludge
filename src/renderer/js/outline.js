@@ -1,6 +1,7 @@
 import { $, el } from './util.js';
 import { state, on } from './state.js';
 import { goToPage } from './viewer.js';
+import { parseToc } from './toc.js';
 
 let builtFor = null;
 
@@ -18,7 +19,7 @@ export async function buildOutline() {
         const page = await resolvePage(dest);
         if (page) goToPage(page);
       }
-    }, title)));
+    }, el('span', { class: 'ol-title' }, title))));
     builtFor = state.docId;
     return;
   }
@@ -33,20 +34,48 @@ export async function buildOutline() {
 }
 
 function renderDerived(box) {
-  const rows = deriveChapters(state.pageText);
+  // Reading the book's own contents pages beats guessing from headings, so try
+  // that first and only fall back to the heading scan.
+  let rows = parseToc(state.pageText);
+  let source = 'contents';
+  if (rows.length < 4) {
+    rows = deriveChapters(state.pageText);
+    source = 'headings';
+  }
+
   if (!rows.length) {
-    box.replaceChildren(el('p', { class: 'empty' }, 'This PDF has no chapter list, and no chapter headings were found in the text.'));
+    box.replaceChildren(el('p', { class: 'empty' }, 'This PDF has no chapter list, and none could be recovered from the text.'));
     return;
   }
+
+  state.chapters = rows;
   box.replaceChildren(
-    el('p', { class: 'empty', style: { padding: '10px 12px 6px', textAlign: 'left', fontSize: '11px' } },
-      'Found in the text — this PDF has no built-in chapter list.'),
+    el('p', { class: 'ol-note' }, source === 'contents'
+      ? 'Read from this book\u2019s contents pages — the PDF has no built-in chapter list.'
+      : 'Found from headings in the text — the PDF has no built-in chapter list.'),
     ...rows.map((r) => el('button', {
       class: `ol-item d${r.depth}`,
+      'data-page': String(r.page),
       onclick: () => goToPage(r.page)
-    }, `${r.title}  ·  p. ${r.page}`))
+    },
+      el('span', { class: 'ol-title' }, r.title),
+      el('span', { class: 'ol-page' }, `p. ${r.page}`)
+    ))
   );
   builtFor = state.docId;
+  highlightCurrentChapter(state.currentPage);
+}
+
+/** Mark the chapter containing the current page. */
+export function highlightCurrentChapter(page) {
+  const items = [...document.querySelectorAll('#outline .ol-item')];
+  if (!items.length) return;
+  let current = null;
+  for (const item of items) {
+    if (Number(item.dataset.page) <= page) current = item;
+    else break;
+  }
+  for (const item of items) item.classList.toggle('current', item === current);
 }
 
 /**
@@ -143,4 +172,5 @@ export function initOutline() {
     if (state.outline && state.outline.length) return;
     renderDerived($('#outline'));
   });
+  on('page:changed', (page) => highlightCurrentChapter(page));
 }

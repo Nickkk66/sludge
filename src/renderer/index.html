@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data:; worker-src 'self' blob:;" />
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data:; worker-src 'self' blob:; media-src 'self' marginalia-media: blob:;" />
 <title>Marginalia</title>
 <link rel="stylesheet" href="css/base.css" />
 <link rel="stylesheet" href="css/ribbon.css" />
@@ -29,6 +29,9 @@
     <button class="icon-btn" id="btnAiTop" title="Ask AI (⌘4)">
       <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5 10.2 10.8 5.5 9l4.7-1.3z"/><circle cx="18" cy="17.5" r="2.2"/></svg>
     </button>
+    <button class="icon-btn" id="btnFocus" title="Focus video">
+      <svg viewBox="0 0 24 24"><path d="M4 5.5h11a1.5 1.5 0 011.5 1.5v10a1.5 1.5 0 01-1.5 1.5H4A1.5 1.5 0 012.5 17V7A1.5 1.5 0 014 5.5z"/><path d="M16.5 10.5l4-2.4v7.8l-4-2.4z"/></svg>
+    </button>
     <button class="icon-btn" id="btnLibraryTop" title="Library (⌘L)">
       <svg viewBox="0 0 24 24"><rect x="3.5" y="4" width="4" height="16" rx="1"/><rect x="9.5" y="4" width="4" height="16" rx="1"/><path d="M16.5 5.4l3.6 1-3.2 14-3.6-1z"/></svg>
     </button>
@@ -41,6 +44,7 @@
   <button class="rtab" data-ribbon="annotations">Annotations</button>
   <button class="rtab" data-ribbon="notes">Notes</button>
   <button class="rtab" data-ribbon="ai">AI</button>
+  <button class="rtab" data-ribbon="document">Document</button>
 </nav>
 
 <div id="ribbon">
@@ -84,6 +88,10 @@
     <button class="rb" id="btnNotesPanel" title="All notes (⌘3)">
       <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/><path d="M9 18l2.5 3 2.5-3"/></svg>
       <span>Notes</span>
+    </button>
+    <button class="rb" id="btnRead" title="Read the page aloud (⌘R)">
+      <svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 9.2a4 4 0 010 5.6M18.5 6.8a7.5 7.5 0 010 10.4"/></svg>
+      <span>Read Aloud</span>
     </button>
     <button class="rb" id="btnAsk" title="Ask AI (⌘4)">
       <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5 10.2 10.8 5.5 9l4.7-1.3z"/><circle cx="18" cy="17.5" r="2.2"/></svg>
@@ -137,6 +145,29 @@
     <div class="rb-spacer"></div>
     <div class="ribbon-hint">Runs fully offline through Ollama. It only reads this PDF and your notes.</div>
   </div>
+
+  <!-- Document -->
+  <div class="ribbon-page" data-page="document">
+    <button class="rb" id="btnDoc">
+      <svg viewBox="0 0 24 24"><path d="M6 3.5h7l5 5V20a.5.5 0 01-.5.5h-11A.5.5 0 016 20z"/><path d="M13 3.5V9h5"/><path d="M9 13h6M9 16.5h4"/></svg>
+      <span>Open Doc</span>
+    </button>
+    <button class="rb" id="btnDocSnap">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M13 5v14"/></svg>
+      <span>Split View</span>
+    </button>
+    <button class="rb" id="btnDocExport">
+      <svg viewBox="0 0 24 24"><path d="M12 15V4m0 0L8.5 7.5M12 4l3.5 3.5"/><path d="M5 15v3.5A1.5 1.5 0 006.5 20h11a1.5 1.5 0 001.5-1.5V15"/></svg>
+      <span>Export</span>
+    </button>
+    <div class="rb-sep"></div>
+    <button class="rb" id="btnDocPreview">
+      <svg viewBox="0 0 24 24"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+      <span>Preview</span>
+    </button>
+    <div class="rb-spacer"></div>
+    <div class="ribbon-hint">Markdown notes saved with this PDF. Type <b>/</b> for blocks, select text and use <b>AI</b> to rewrite it.</div>
+  </div>
 </div>
 
 <!-- ===================== color bar ===================== -->
@@ -149,11 +180,45 @@
   <button class="cb-close" id="colorbarClose">✕</button>
 </div>
 
+<!-- ===================== read-aloud bar ===================== -->
+<div id="speechbar" hidden>
+  <button class="sp-ctl" id="spPlay" title="Play / pause (space)">
+    <svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>
+  </button>
+  <button class="sp-ctl" id="spPrev" title="Previous sentence">
+    <svg viewBox="0 0 24 24"><path d="M17 6v12L8 12z"/><path d="M6 5.5v13"/></svg>
+  </button>
+  <button class="sp-ctl" id="spNext" title="Next sentence">
+    <svg viewBox="0 0 24 24"><path d="M7 6v12l9-6z"/><path d="M18 5.5v13"/></svg>
+  </button>
+  <button class="sp-ctl" id="spStop" title="Stop">
+    <svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>
+  </button>
+
+  <div class="sp-div"></div>
+
+  <label class="sp-field">
+    <span>Speed</span>
+    <input type="range" id="spRate" min="0.5" max="2.5" step="0.05" value="1" />
+    <b id="spRateLabel">1.0×</b>
+  </label>
+
+  <label class="sp-field">
+    <span>Voice</span>
+    <select id="spVoice"></select>
+  </label>
+
+  <label class="sp-check"><input type="checkbox" id="spFollow" checked /> follow along</label>
+
+  <div class="sp-now" id="spNow"></div>
+  <button class="cb-close" id="speechbarClose" title="Close">✕</button>
+</div>
+
 <!-- ===================== main ===================== -->
 <main id="main">
   <!-- left icon rail -->
   <div id="rail">
-    <button class="rail-btn active" data-panel="thumbnails" title="Thumbnails (⌘1)">
+    <button class="rail-btn active" data-panel="thumbnails" title="Pages (⌘1)">
       <svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="7" height="8" rx="1"/><rect x="13" y="3.5" width="7" height="8" rx="1"/><rect x="4" y="13" width="7" height="8" rx="1"/><rect x="13" y="13" width="7" height="8" rx="1"/></svg>
     </button>
     <button class="rail-btn" data-panel="outline" title="Chapters (⌘2)">
@@ -170,7 +235,7 @@
   <!-- left panel -->
   <aside id="leftPanel">
     <div class="panel-head">
-      <span id="leftPanelTitle">Thumbnails</span>
+      <span id="leftPanelTitle">Pages</span>
       <button class="panel-close" id="leftPanelClose">✕</button>
     </div>
     <div class="panel-body">
@@ -179,12 +244,23 @@
       <div class="panel-view" data-view="search">
         <div class="search-box">
           <input type="search" id="searchInput" placeholder="Search the document…" />
+          <div class="search-colors" id="searchColors"></div>
           <div class="search-meta" id="searchMeta"></div>
         </div>
         <div id="searchResults"></div>
       </div>
       <div class="panel-view" data-view="notes">
-        <div id="notesLeftHint" class="empty">Notes live in the right-hand panel.</div>
+        <div class="side-actions">
+          <button class="side-action" id="sideAllNotes">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="14" rx="2"/><path d="M8 9h8M8 13h5"/><path d="M9 18l2.5 3 2.5-3"/></svg>
+            <span><b>All Notes</b><small>Open the notes panel on the right</small></span>
+          </button>
+          <button class="side-action" id="sideExport">
+            <svg viewBox="0 0 24 24"><path d="M12 15V4m0 0L8.5 7.5M12 4l3.5 3.5"/><path d="M5 15v3.5A1.5 1.5 0 006.5 20h11a1.5 1.5 0 001.5-1.5V15"/></svg>
+            <span><b>Export</b><small>Save every note as Markdown</small></span>
+          </button>
+        </div>
+        <div id="sideNotesSummary"></div>
       </div>
     </div>
   </aside>
@@ -219,7 +295,11 @@
       <div class="right-tabs">
         <button class="rt active" data-right="notes">Notes</button>
         <button class="rt" data-right="ai">Ask AI</button>
+        <button class="rt" data-right="document">Document</button>
       </div>
+      <button class="panel-close" id="rightSnap" title="Split view — widen this panel">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M13 5v14"/></svg>
+      </button>
       <button class="panel-close" id="rightPanelClose">✕</button>
     </div>
 
@@ -227,12 +307,45 @@
       <!-- notes -->
       <div class="panel-view active" data-view="notes">
         <div class="notes-toolbar">
-          <input type="search" id="noteFilter" placeholder="Filter notes…" />
+          <input type="search" id="noteFilter" placeholder="Filter notes — text, #tag, p112, 13-14" />
           <div class="filter-row" id="colorFilters"></div>
           <div class="filter-row" id="tagFilters"></div>
           <div class="notes-count" id="notesCount">0 notes</div>
         </div>
         <div id="notesList"></div>
+      </div>
+
+      <!-- document -->
+      <div class="panel-view" data-view="document">
+        <div class="doc-toolbar" id="docToolbar">
+          <button data-md="h1" title="Heading 1">H1</button>
+          <button data-md="h2" title="Heading 2">H2</button>
+          <button data-md="bold" title="Bold (⌘B)"><b>B</b></button>
+          <button data-md="italic" title="Italic (⌘I)"><i>I</i></button>
+          <button data-md="bullet" title="Bullet list">•</button>
+          <button data-md="number" title="Numbered list">1.</button>
+          <button data-md="todo" title="Checklist">☐</button>
+          <button data-md="quote" title="Quote">❝</button>
+          <button data-md="code" title="Code">&lt;/&gt;</button>
+          <button data-md="rule" title="Divider">―</button>
+          <div class="grow"></div>
+          <button id="docAiBtn" class="doc-ai" title="AI actions">✦ AI</button>
+        </div>
+        <div class="doc-body">
+          <textarea id="docEditor" spellcheck="true"
+            placeholder="Write here.
+
+Type / for headings, lists and checkboxes.
+Select any text and hit ✦ AI to tidy it up.
+
+This saves next to your PDF, with your highlights."></textarea>
+          <div id="docPreview" class="doc-preview" hidden></div>
+        </div>
+        <div class="doc-foot">
+          <span id="docStats">0 words</span>
+          <div class="grow"></div>
+          <span id="docSaved"></span>
+        </div>
       </div>
 
       <!-- ai -->
@@ -259,6 +372,22 @@
     </div>
   </aside>
 </main>
+
+<!-- ===================== focus video ===================== -->
+<div id="videostrip" hidden>
+  <div class="vs-grip" id="vsGrip" title="Drag to resize"></div>
+  <video id="focusVideo" muted loop playsinline></video>
+  <div class="vs-controls">
+    <button class="vs-btn" id="vsPlay" title="Play / pause">
+      <svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>
+    </button>
+    <span class="vs-name" id="vsName"></span>
+    <button class="vs-btn" id="vsSwap" title="Switch video">
+      <svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>
+    </button>
+    <button class="vs-btn" id="vsClose" title="Hide">✕</button>
+  </div>
+</div>
 
 <!-- ===================== bottom bar ===================== -->
 <footer id="statusbar">
@@ -303,6 +432,24 @@
     <div class="modal-body"><div id="libraryGrid"></div></div>
     <div class="modal-foot">
       <button class="big-btn primary" id="libraryAdd">Add a PDF…</button>
+    </div>
+  </div>
+</div>
+
+<div id="focusModal" class="modal hidden">
+  <div class="modal-card narrow">
+    <div class="modal-head">
+      <h2>Focus video</h2>
+      <button class="panel-close" id="focusClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-intro">A looping, silent gameplay strip along the bottom. Pair it with read-aloud: the video holds your eyes, the voice does the reading.</p>
+      <div id="focusPacks"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="link-btn" id="focusReveal">Show media folder</button>
+      <div class="grow"></div>
+      <button class="big-btn" id="focusOff">Turn off</button>
     </div>
   </div>
 </div>

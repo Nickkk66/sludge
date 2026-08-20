@@ -70,8 +70,19 @@
   transition: filter .12s;
 }
 html[data-theme="dark"] .annoLayer .hl { mix-blend-mode: multiply; }
-.annoLayer .hl:hover { filter: brightness(.92); }
-.annoLayer .hl.sel { outline: 2px solid var(--blue); outline-offset: 1px; }
+/* Hover state is applied to every rect of the annotation at once, so a
+   highlight spanning six lines reacts as one object. */
+.annoLayer .hl.hover { filter: brightness(.88) saturate(1.15); }
+.annoLayer .hl.sel { filter: brightness(.88) saturate(1.15); }
+
+/* Jumping to a note pulses its outline rather than leaving one behind. */
+.annoLayer .hl.flash, .annoLayer .pin.flash { animation: annoFlash 1.5s ease-out 1; }
+@keyframes annoFlash {
+  0%   { box-shadow: 0 0 0 0 rgba(74,155,255,0); }
+  15%  { box-shadow: 0 0 0 3px rgba(74,155,255,.85); }
+  55%  { box-shadow: 0 0 0 3px rgba(74,155,255,.7); }
+  100% { box-shadow: 0 0 0 6px rgba(74,155,255,0); }
+}
 .annoLayer .hl.has-note::after {
   content: "";
   position: absolute; right: -3px; top: -3px;
@@ -89,8 +100,8 @@ html[data-theme="dark"] .annoLayer .hl { mix-blend-mode: multiply; }
   filter: drop-shadow(0 2px 4px rgba(0,0,0,.35));
 }
 .annoLayer .pin svg { width: 24px; height: 24px; stroke: rgba(0,0,0,.45); stroke-width: 1.2; }
-.annoLayer .pin:hover { transform: translate(-50%, -100%) scale(1.12); }
-.annoLayer .pin.sel svg { stroke: var(--blue); stroke-width: 2; }
+.annoLayer .pin.hover, .annoLayer .pin:hover { transform: translate(-50%, -100%) scale(1.14); }
+.annoLayer .pin.sel svg { stroke: var(--blue); stroke-width: 1.8; }
 
 .annoLayer .find-hit {
   position: absolute;
@@ -154,3 +165,67 @@ html[data-theme="dark"] .annoLayer .hl { mix-blend-mode: multiply; }
 .recent-item:hover { background: var(--bg-3); color: var(--fg); }
 .recent-item .ri-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-item .ri-meta { color: var(--fg-3); font-size: 11.5px; flex: none; }
+
+/* Inverting the canvas turns a white page dark without touching the overlays,
+   so highlights and pins keep their real colours. */
+#viewerWrap.invert-pdf .page canvas { filter: invert(1) hue-rotate(180deg); }
+#viewerWrap.invert-pdf .page { background: #14161a; }
+
+/* ---------- read-aloud highlighting ---------- */
+.annoLayer .speak-sentence {
+  position: absolute; border-radius: 3px;
+  background: rgba(74,155,255,.20);
+  box-shadow: 0 0 0 1px rgba(74,155,255,.30);
+  mix-blend-mode: multiply;
+  transition: all .12s linear;
+}
+.annoLayer .speak-word {
+  position: absolute; border-radius: 3px;
+  background: rgba(255,106,61,.42);
+  mix-blend-mode: multiply;
+}
+#viewerWrap.invert-pdf .annoLayer .speak-sentence,
+#viewerWrap.invert-pdf .annoLayer .speak-word { mix-blend-mode: screen; }
+
+/* ---------- focus video strip ---------- */
+#videostrip {
+  grid-area: video;
+  position: relative;
+  height: var(--video-h, 200px);
+  min-height: 90px;
+  background: #000;
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+}
+#videostrip video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.vs-grip {
+  position: absolute; top: 0; left: 0; right: 0; height: 6px;
+  cursor: ns-resize; z-index: 3;
+}
+.vs-grip:hover { background: var(--accent); opacity: .55; }
+.vs-controls {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 4px 4px 10px;
+  background: rgba(0,0,0,.55); border-radius: 20px;
+  backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity .15s;
+}
+#videostrip:hover .vs-controls { opacity: 1; }
+.vs-name { color: #fff; font-size: 11.5px; margin-right: 4px; }
+.vs-btn {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 11px;
+}
+.vs-btn svg { width: 13px; height: 13px; }
+.vs-btn:hover { background: rgba(255,255,255,.22); }
+
+/* Split view: the side panel takes half the window for writing while reading. */
+#main.right-open.right-wide { grid-template-columns: var(--rail-w) var(--left-w) 1fr minmax(420px, 46vw); }
+#main.left-collapsed.right-open.right-wide { grid-template-columns: var(--rail-w) 0 1fr minmax(420px, 50vw); }

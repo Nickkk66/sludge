@@ -16,7 +16,7 @@ export function paintAnnotations(pageNum, layer) {
         // highlight doesn't sprout a dot per line.
         const marker = a.note && i === rects.length - 1 ? ' has-note' : '';
         const box = el('div', {
-          class: `hl${marker}${state.selectedAnnotation === a.id ? ' sel' : ''}`,
+          class: `hl${marker}`,
           'data-id': a.id,
           style: {
             left: `${r.x * 100}%`,
@@ -31,7 +31,7 @@ export function paintAnnotations(pageNum, layer) {
       });
     } else if (a.type === 'pin') {
       const pin = el('div', {
-        class: `pin${state.selectedAnnotation === a.id ? ' sel' : ''}`,
+        class: 'pin',
         'data-id': a.id,
         style: { left: `${a.x * 100}%`, top: `${a.y * 100}%` },
         title: a.note || 'Pinned note',
@@ -54,6 +54,25 @@ export function paintAnnotations(pageNum, layer) {
       }
     }
   }
+}
+
+/** Every rect belonging to one annotation, across the rendered pages. */
+const partsOf = (id) => [...document.querySelectorAll(`.annoLayer [data-id="${id}"]`)];
+
+/** Pulse an annotation so a jump lands somewhere visible, then settles. */
+export function flashAnnotation(id) {
+  const parts = partsOf(id);
+  for (const node of parts) {
+    node.classList.remove('flash');
+    // Restart the animation even if it is already running.
+    void node.offsetWidth;
+    node.classList.add('flash');
+    setTimeout(() => node.classList.remove('flash'), 1600);
+  }
+}
+
+export function setAnnotationHover(id, on) {
+  for (const node of partsOf(id)) node.classList.toggle('hover', on);
 }
 
 /* ------------------------------------------------------------ selection → rects */
@@ -305,6 +324,22 @@ export function initAnnotationUi() {
   $('#neText').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $('#neSave').click(); }
     if (e.key === 'Escape') { e.preventDefault(); $('#neCancel').click(); }
+  });
+
+  // Hovering any rect of a highlight lights up the whole highlight.
+  const pages = $('#pages');
+  let hovered = null;
+  pages.addEventListener('mouseover', (e) => {
+    const hit = e.target.closest('.hl, .pin');
+    const id = hit ? hit.dataset.id : null;
+    if (id === hovered) return;
+    if (hovered) setAnnotationHover(hovered, false);
+    hovered = id;
+    if (id) setAnnotationHover(id, true);
+  });
+  pages.addEventListener('mouseleave', () => {
+    if (hovered) setAnnotationHover(hovered, false);
+    hovered = null;
   });
 
   // Clicks on the page: open an existing annotation, or drop a pin.

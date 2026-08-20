@@ -1,7 +1,8 @@
 import { $, el, escapeHtml } from './util.js';
 import { state, emit, on, COLORS, filteredAnnotations, allTags, usedColors } from './state.js';
-import { openNoteEditor, deleteAnnotation } from './annotations.js';
+import { openNoteEditor, deleteAnnotation, flashAnnotation, setAnnotationHover } from './annotations.js';
 import { scrollToSpot, refreshAnnotations } from './viewer.js';
+import { insertQuote } from './docnotes.js';
 
 export function renderNotesPanel() {
   renderFilters();
@@ -31,7 +32,9 @@ function noteCard(a) {
     onclick: (e) => {
       if (e.target.closest('.nc-actions')) return;
       jumpTo(a);
-    }
+    },
+    onmouseenter: () => setAnnotationHover(a.id, true),
+    onmouseleave: () => setAnnotationHover(a.id, false)
   });
 
   const head = el('div', { class: 'nc-head' },
@@ -55,6 +58,11 @@ function noteCard(a) {
         if (a.note) parts.push(a.note);
         navigator.clipboard.writeText(`${parts.join('\n')}\n— p. ${a.page}`);
       }
+    }),
+    el('button', {
+      title: 'Add to the document',
+      html: '<svg viewBox="0 0 24 24"><path d="M6 3.5h7l5 5V20a.5.5 0 01-.5.5h-11A.5.5 0 016 20z"/><path d="M13 3.5V9h5"/><path d="M12 12v5M9.5 14.5h5"/></svg>',
+      onclick: (e) => { e.stopPropagation(); insertQuote(a); emit('panel:right', 'document'); }
     }),
     el('button', {
       title: 'Delete',
@@ -86,6 +94,8 @@ function jumpTo(a) {
   scrollToSpot(a.page, y);
   refreshAnnotations();
   renderNotesPanel();
+  // Pulse once the scroll has landed, so the flash is actually seen.
+  setTimeout(() => flashAnnotation(a.id), 420);
 }
 
 /* ---------------- filters ---------------- */

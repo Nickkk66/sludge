@@ -1,14 +1,24 @@
 'use strict';
 const path = require('path');
 const fsp = require('fs/promises');
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, protocol, net } = require('electron');
+const { pathToFileURL } = require('url');
 const store = require('./store');
 const ollama = require('./ollama');
 const { retrieve } = require('./retrieval');
+const media = require('./media');
 const buildMenu = require('./menu');
 
 let win = null;
 let rendererReady = false;
+const activeDownloads = new Map();
+
+// Video files live outside the app bundle, so they get their own scheme rather
+// than loosening the renderer's file access. Streaming lets a 200 MB video
+// start playing without being read into memory.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'marginalia-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }
+]);
 // A PDF path passed on the command line (or handed over by Finder) opens once
 // the window is ready.
 let pendingOpenPath = process.argv.slice(1).find((a) => /\.pdf$/i.test(a)) || null;
@@ -63,6 +73,13 @@ app.on('open-file', (event, filePath) => {
 
 app.whenReady().then(async () => {
   await store.ensureDirs();
+  await media.ensureDir();
+
+  protocol.handle('marginalia-media', (request) => {
+    const name = request.url.replace(/^marginalia-media:\/\//, '').split('?')[0];
+    return net.fetch(pathToFileURL(media.resolve(name)).toString());
+  });
+
   createWindow();
   Menu.setApplicationMenu(buildMenu(() => win));
   app.on('activate', () => {
@@ -113,6 +130,7 @@ handle('doc:open', async (filePath) => {
     bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     annotations: sidecar.annotations,
     lastPosition: sidecar.lastPosition,
+    document: sidecar.document || { markdown: '', updated: null },
     sidecarPath: sidecar.sidecarPath
   };
 });
@@ -150,6 +168,38 @@ handle('export:save', async (defaultName, content) => {
   return res.filePath;
 });
 
+/* -------------------------------------------------------- focus video */
+
+handle('media:list', async () => media.list());
+handle('media:remove', async (id) => media.remove(id));
+handle('media:reveal', async () => {
+  shell.showItemInFolder(media.mediaDir());
+  return media.mediaDir();
+});
+
+ipcMain.on('media:download', async (event, { id }) => {
+  const send = (channel, payload) => {
+    if (!event.sender.isDestroyed()) event.sender.send(channel, { id, ...payload });
+  };
+  if (activeDownloads.has(id)) return;
+  const ctrl = new AbortController();
+  activeDownloads.set(id, ctrl);
+  try {
+    await media.download(id, (p) => send('media:progress', p), ctrl.signal);
+    send('media:done', { ok: true });
+  } catch (err) {
+    const msg = String((err && err.message) || err);
+    send('media:done', { ok: false, error: /abort/i.test(msg) ? 'Cancelled' : msg });
+  } finally {
+    activeDownloads.delete(id);
+  }
+});
+
+ipcMain.on('media:cancel', (_e, id) => {
+  const ctrl = activeDownloads.get(id);
+  if (ctrl) ctrl.abort();
+});
+
 handle('theme:set', async (theme) => {
   nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark';
   return theme;
@@ -161,6 +211,8 @@ handle('ai:status', async (autostart) => ollama.status({ autostart: autostart !=
 
 handle('ai:warm', async (model) => ollama.warm(model));
 
+handle('ai:rewrite', async (payload) => ollama.rewrite(payload));
+
 handle('ai:retrieve', async ({ query, docId, annotations }) => {
   const index = await store.getTextIndex(docId);
   const pages = (index && index.pages) || [];
@@ -168,11 +220,35 @@ handle('ai:retrieve', async ({ query, docId, annotations }) => {
 });
 
 // Streaming answers use send/on rather than handle so tokens arrive live.
+// Greetings and "what can you do" are not questions about the document.
+// Running retrieval on them fed the model six random pages and produced
+// confident nonsense, so they get answered directly.
+const CHITCHAT = /^\s*(hi|hey|hello|yo|sup|hiya|howdy|good (morning|afternoon|evening)|thanks?|thank you|ty|ok(ay)?|cool|nice|test|ping)\b[\s!.?]*$/i;
+const CAPABILITY = /^\s*(what can you do|what do you do|who are you|what are you|help|how do (i|you) (use|work)|what is this)\b[\s!.?]*$/i;
+
+function smallTalkReply(query, docName, noteCount) {
+  if (CAPABILITY.test(query)) {
+    return `I read **${docName || 'this PDF'}** and your own highlights and notes, and answer from both.\n\n` +
+      `Try asking:\n` +
+      `- "Summarize the chapter around page 112."\n` +
+      `- "What do my notes say about taxation?"\n` +
+      `- "Make five exam questions from this section."\n\n` +
+      `I cite the book as [p. 112] and always say when something came from your notes. ` +
+      `You currently have **${noteCount}** note${noteCount === 1 ? '' : 's'} in this document.`;
+  }
+  return `Hey — ask me something about **${docName || 'this PDF'}** or about your notes and I'll dig through both. ` +
+    `I only answer from what's actually in the document, so be as specific as you like.`;
+}
+
 ipcMain.on('ai:ask', async (event, { streamId, query, docId, docName, model, annotations, history }) => {
   const reply = (channel, payload) => {
     if (!event.sender.isDestroyed()) event.sender.send(channel, { streamId, ...payload });
   };
   try {
+    if (CHITCHAT.test(query) || CAPABILITY.test(query)) {
+      reply('ai:done', { text: smallTalkReply(query, docName, (annotations || []).length), smallTalk: true });
+      return;
+    }
     const index = await store.getTextIndex(docId);
     const pages = (index && index.pages) || [];
     const evidence = retrieve({ query, pages, annotations: annotations || [] });

@@ -30,12 +30,23 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   exportNotes: (defaultName, content) => call('export:save', defaultName, content),
+
+  media: {
+    list: () => call('media:list'),
+    remove: (id) => call('media:remove', id),
+    reveal: () => call('media:reveal'),
+    download: (id) => ipcRenderer.send('media:download', { id }),
+    cancel: (id) => ipcRenderer.send('media:cancel', id),
+    onProgress: (cb) => ipcRenderer.on('media:progress', (_e, p) => cb(p)),
+    onDone: (cb) => ipcRenderer.on('media:done', (_e, p) => cb(p))
+  },
   setTheme: (theme) => call('theme:set', theme),
 
   ai: {
     status: (autostart) => call('ai:status', autostart),
     retrieve: (payload) => call('ai:retrieve', payload),
     warm: (model) => call('ai:warm', model),
+    rewrite: (payload) => call('ai:rewrite', payload),
     ask: (payload) => ipcRenderer.send('ai:ask', payload),
     stop: (streamId) => ipcRenderer.send('ai:stop', streamId),
     onToken: (cb) => ipcRenderer.on('ai:token', (_e, p) => cb(p)),

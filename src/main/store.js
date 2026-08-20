@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   aiEnabled: true,
   defaultColor: '#f6d34a',
   autoNote: true,
+  invert: false,
   zoom: 1,
   lastDocId: null,
   spread: 'single'
@@ -99,6 +100,7 @@ function emptyDoc(docId, filePath) {
     file: { name: path.basename(filePath), path: filePath },
     annotations: [],
     lastPosition: null,
+    document: { markdown: '', updated: null },
     updated: new Date().toISOString()
   };
 }
@@ -125,6 +127,9 @@ async function saveAnnotations(filePath, docId, doc) {
     file: { name: path.basename(filePath), path: filePath },
     annotations: doc.annotations || [],
     lastPosition: doc.lastPosition || null,
+    // The long-form note document lives alongside the highlights, so one
+    // sidecar file still holds everything for this PDF.
+    document: doc.document || { markdown: '', updated: null },
     updated: new Date().toISOString()
   };
   const primary = sidecarFor(filePath);
@@ -151,7 +156,14 @@ async function getLibrary() {
 async function upsertLibraryDoc(entry) {
   const lib = await getLibrary();
   const i = lib.docs.findIndex((d) => d.docId === entry.docId);
-  if (i >= 0) lib.docs[i] = { ...lib.docs[i], ...entry };
+  if (i >= 0) {
+    const merged = { ...lib.docs[i], ...entry };
+    // Only an explicit edit clears a custom title or description; routine
+    // updates from opening the file must not wipe them.
+    if (entry.title === undefined) merged.title = lib.docs[i].title;
+    if (entry.desc === undefined) merged.desc = lib.docs[i].desc;
+    lib.docs[i] = merged;
+  }
   else lib.docs.unshift(entry);
   lib.docs.sort((a, b) => (b.lastOpened || '').localeCompare(a.lastOpened || ''));
   await writeJSON(libraryPath(), lib);

@@ -180,6 +180,37 @@ function chat({ model, query, evidence, docName, history = [] }, onToken) {
 }
 
 /**
+ * One-shot text transformation for the note document. Unlike `chat` this has
+ * no document evidence attached — it only ever sees the text handed to it.
+ */
+async function rewrite({ model, instruction, text }) {
+  const res = await api('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      keep_alive: '30m',
+      messages: [
+        {
+          role: 'system',
+          content: 'You edit the user\'s own writing. Follow the instruction exactly and return ONLY the resulting text — ' +
+                   'no preamble, no explanation, no surrounding quotes, no code fences. Preserve Markdown formatting.'
+        },
+        { role: 'user', content: `${instruction}\n\n---\n${text}` }
+      ],
+      options: { temperature: 0.3, num_ctx: 4096 }
+    })
+  }, 180000);
+  if (!res.ok) throw new Error(`Ollama responded ${res.status}`);
+  const data = await res.json();
+  let out = (data.message && data.message.content) || '';
+  // Small models like to wrap answers in a fence even when told not to.
+  out = out.replace(/^\s*```[a-z]*\n([\s\S]*?)\n?```\s*$/i, '$1');
+  return out.trim();
+}
+
+/**
  * Load a model into memory ahead of the first question. Cold-loading a 3B model
  * costs ~20 s; doing it while the reader is still typing hides all of that.
  */
@@ -197,4 +228,4 @@ async function warm(model) {
   }
 }
 
-module.exports = { status, listModels, pickDefault, chat, warm, startServer, SYSTEM_PROMPT, buildPrompt };
+module.exports = { status, listModels, pickDefault, chat, rewrite, warm, startServer, SYSTEM_PROMPT, buildPrompt };

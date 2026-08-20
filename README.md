@@ -25,9 +25,39 @@ ends up scattered across a separate document.
 
 **Find your way around 800 pages**
 - Virtualised rendering: only the pages near the viewport are ever drawn, so scroll stays smooth.
-- Thumbnails, full-text search with on-page hit highlighting, and a chapter list.
-- If a PDF has no embedded outline, Marginalia derives one from chapter headings in the text.
+- Search jumps straight to the nearest match and highlights every hit on the page.
+  Narrow it to pages you've highlighted in a given colour.
+- **Chapters, even without an outline.** Most scanned textbooks ship no embedded PDF
+  outline. Marginalia reads the book's own contents pages, works out the offset between
+  printed page numbers and PDF pages, and places every chapter on the right one — 48
+  entries recovered from an 804-page textbook that exposes none.
 - It remembers your page, scroll position, and zoom per document, and reopens there.
+- Right-click day/night to invert the page itself, for reading a white PDF at night.
+
+**Read it aloud**
+- Plays the page through your Mac's offline voices, highlighting the sentence it's on and
+  the word it's saying, turning pages as it goes.
+- Speed and voice live in the top bar; pause any time to highlight and annotate, then resume.
+- Space plays and pauses; `⌘R` starts it.
+
+![Read-aloud highlighting a sentence while notes are written alongside](docs/screenshot-reading.png)
+
+*Reading aloud on the left, the Markdown document on the right — editor above, live preview below.*
+
+**A document to write in**
+- A Markdown editor that lives beside the PDF, in the same notes file.
+- Type `/` for headings, lists, checkboxes, quotes, tables. `⌘B`/`⌘I` work as expected;
+  Enter continues lists; checkboxes tick from the preview.
+- Select any passage and hand it to the local model — improve, shorten, fix grammar,
+  turn into bullets, or generate study questions.
+- Send any highlight straight into the document from the notes panel.
+- Split view widens it to half the window so you can read and write at once.
+
+**Focus video**
+- An optional silent, looping gameplay strip along the bottom for when a plain page of
+  text won't hold still. Resize it by dragging its top edge.
+- Video packs are **add-ons**: the app ships without them and downloads them on demand,
+  so new packs need a published file rather than a new build.
 
 **Ask a local AI**
 - Ranks the document's pages *and* your own notes against your question, then answers from what it found.
@@ -99,8 +129,10 @@ milliseconds over an 800-page book — no embedding model, no index server, no w
 |---|---|
 | `⌘O` / `⌘L` | Open PDF / Library |
 | `⌘F` | Search, `↵` / `⇧↵` to step through hits |
-| `⌘1` `⌘2` `⌘3` `⌘4` | Thumbnails · Chapters · Notes · Ask AI |
-| `v` `h` `p` `space` | Select · Highlight · Pin · Hand |
+| `⌘1` `⌘2` `⌘3` `⌘4` `⌘5` | Pages · Chapters · Notes · Ask AI · Document |
+| `⌘R` | Read aloud (`space` to pause / resume) |
+| `⌘⇧S` / `⌘⇧F` | Split view / focus video |
+| `v` `h` `p` `r` | Select · Highlight · Pin · Read aloud |
 | `←` `→` | Previous / next page |
 | `⌘+` `⌘-` `⌘0` | Zoom in · out · fit width |
 | `⌘D` | Day / night |
@@ -108,20 +140,52 @@ milliseconds over an 800-page book — no embedding model, no index server, no w
 
 `⌘`-scroll zooms.
 
+## Filtering notes
+
+The notes filter box takes more than plain text, and terms combine:
+
+| | |
+|---|---|
+| `#exam` | notes tagged `exam` (prefix match, so `#ex` finds it) |
+| `p112` | notes on page 112 |
+| `13-14` | notes on pages 13 to 14 |
+| `1776` | page 1776, or any note mentioning 1776 |
+| `#exam p112 tax` | all three at once |
+
+## Video packs
+
+Packs are fetched from a release URL rather than bundled. Point the app at your own
+files by setting a base URL:
+
+```bash
+MARGINALIA_MEDIA_BASE="https://example.com/my-packs" npm start
+```
+
+Downloads land in `~/Library/Application Support/Marginalia/media/` and are served to the
+page through a custom `marginalia-media://` scheme, so a 200 MB video streams from disk
+instead of being read into memory. "Show media folder" in the picker opens it, and you can
+drop your own `.mp4` in there — name it to match a pack's `file` and it counts as installed.
+
 ## How it's put together
 
 ```
 src/main/        Electron main process
-  main.js          window, IPC, streaming AI responses
+  main.js          window, IPC, streaming AI responses, media protocol
   store.js         settings, library index, sidecar notes, text cache
   retrieval.js     BM25 ranking over pages and notes (no dependencies)
   ollama.js        local model discovery, warm-up, grounded prompt, streaming
+  media.js         focus-video packs: catalog, streaming download, install state
 src/renderer/    the UI — plain ES modules, no framework, no build step
   js/viewer.js     pdf.js loading, virtualised pages, text + annotation layers
   js/annotations.js  selection → normalised rects, highlights, pins, editor
+  js/textmap.js    text layer ⇄ character offsets, shared by search and speech
+  js/toc.js        recovering a chapter list from a book's contents pages
+  js/speech.js     read-aloud, sentence/word highlighting, page turning
+  js/docnotes.js   the Markdown document, slash menu, AI rewrites
   js/notes.js      the notes panel, filters, tags
   js/search.js     full-text search and on-page hit mapping
   js/ai.js         chat panel, streaming, citations, sources
+  js/focus.js      the video strip and pack picker
 ```
 
 Highlight geometry is stored as fractions of the page box, so annotations stay put at
@@ -145,6 +209,7 @@ any zoom level and on any display.
       "color": "#f6d34a"
     }
   ],
+  "document": { "markdown": "# Townshend Acts\n\n- [ ] Write the DBQ paragraph", "updated": "…" },
   "lastPosition": { "page": 112, "within": 0.2, "zoomMode": "1" }
 }
 ```
