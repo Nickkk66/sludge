@@ -28,6 +28,7 @@ let stopping = false;
 let wordAt = [0, 0];
 
 export const speech = {
+  label: '',
   playing: false,
   paused: false,
   rate: 1,
@@ -139,6 +140,8 @@ function ensureMapping() {
 
 function paintReading(sentence, wordStart = wordAt[0], wordEnd = wordAt[1]) {
   wordAt = [wordStart, wordEnd];
+  // Story mode has no page to mark up; the caption panel carries it instead.
+  if (!readingPage) return;
   const pageEl = getPageEl(readingPage);
   if (!pageEl) return;
   const layer = pageEl.querySelector('.annoLayer');
@@ -171,7 +174,7 @@ export function clearReadingHighlight() {
 }
 
 function keepInView(sentence) {
-  if (!speech.followScroll || !sentence) return;
+  if (!speech.followScroll || !sentence || !readingPage) return;
   const pageEl = getPageEl(readingPage);
   if (!pageEl || !ensureMapping()) return;
   const rects = rectsFor(pageEl, mapped, sentence.start, sentence.end);
@@ -267,6 +270,11 @@ function estimateRemaining(sentence, localChar) {
 
 async function advancePage() {
   clearReadingHighlight();
+  // Free-standing text simply ends; there is no next page to turn to.
+  if (!readingPage) {
+    stop();
+    return;
+  }
   const next = readingPage + 1;
   if (next > state.numPages) {
     toast('Reached the end of the document.');
@@ -453,6 +461,32 @@ export function offsetOfNode(node, nodeOffset) {
 }
 
 export const isReadingPage = (pageNum) => readingPage === pageNum && sentences.length > 0;
+
+/**
+ * Read a block of text that isn't part of the document — a generated story.
+ * There is no page to highlight, so the caption panel carries it alone.
+ */
+export function speakText(text, { label = '' } = {}) {
+  const clean = String(text || '').trim();
+  if (!clean) return false;
+  stopping = true;
+  synth.cancel();
+  stopping = false;
+
+  mapped = null;
+  readingPage = 0;
+  sentences = splitSentences(clean);
+  if (!sentences.length) return false;
+  index = 0;
+  spokenWords = 0;
+  pageStartedAt = Date.now();
+  speech.playing = true;
+  speech.paused = false;
+  speech.label = label;
+  emit('speech:changed');
+  speakCurrent();
+  return true;
+}
 
 export function setRate(rate) {
   speech.rate = Math.max(0.5, Math.min(3, Number(rate) || 1));

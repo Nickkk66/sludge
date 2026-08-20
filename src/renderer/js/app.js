@@ -15,15 +15,18 @@ import { exportNotes } from './exporter.js';
 import { initSpeech, speech, play as speechPlay, pause as speechPause, stop as speechStop,
          toggle as speechToggle, skip as speechSkip, setRate, setVoice, getVoices, getAllVoices,
          voicesAreBasic, refreshVoices, readingState, jumpToSentence, sentenceAtOffset,
-         readFrom, offsetAtPoint, isReadingPage } from './speech.js';
+         readFrom, offsetAtPoint, isReadingPage, speakText } from './speech.js';
 import { describeVoice } from './voices.js';
-import { initDocNotes, getMarkdown, setMarkdown, exportDocument } from './docnotes.js';
+import { initDocNotes, getMarkdown, setMarkdown, exportDocument, insertMarkdown } from './docnotes.js';
 import { initFocus, restoreFocus, openPicker } from './focus.js';
 import { initProfile, loadProfile, showOnboarding, renderGreeting, profile } from './profile.js';
 import { initScan, refreshScanStatus, setModels } from './scan.js';
 import { initQuestions } from './questions.js';
 import { initZones, selectZone, clearSelection } from './zones.js';
 import { initTabs, tabs, addTab, setActive, removeTab, syncActive, activeTab, findTabByPath, render as renderTabs } from './tabs.js';
+import { initSettings, openSettings, setSettingsModels } from './settings.js';
+import { initTour, startTour, tourSeen } from './tour.js';
+import { initStory } from './story.js';
 import { BUILT_IN, applyLayout, captureLayout, customLayouts, saveCurrentAs, removeCustom,
          stepTeleprompterSize } from './layouts.js';
 
@@ -52,6 +55,9 @@ async function boot() {
   initQuestions();
   initZones();
   initTabs();
+  initSettings();
+  initTour();
+  initStory();
   wireTabs();
   wireLayouts();
   wireSpeechBar();
@@ -70,8 +76,19 @@ async function boot() {
   refreshAiStatus({ autostart: false });
   restoreFocus();
 
-  // First launch: ask the few questions that make the AI's answers fit.
-  if (!profile.onboarded) setTimeout(showOnboarding, 500);
+  // First launch: the few questions, then the walkthrough. Neither is worth
+  // showing before there's a document on screen to point at.
+  if (!profile.onboarded) {
+    setTimeout(showOnboarding, 500);
+    on('profile:changed', () => {
+      if (!tourSeen()) setTimeout(() => startTour(), 700);
+    });
+  } else if (!tourSeen() && state.pdf) {
+    setTimeout(() => startTour(), 900);
+  }
+
+  // Never make noise on launch.
+  speechStop();
 
   window.api.onOpenFile((path) => openDocument(path));
   window.api.onMenu(handleMenu);
@@ -80,6 +97,14 @@ async function boot() {
   // Tell main we're listening, and take any file it queued for us.
   const queued = await window.api.ready().catch(() => null);
   if (queued) openDocument(queued);
+}
+
+/** Read a generated story with the same voice the document uses. */
+function speakStory(story) {
+  const text = `${story.title}. ${story.body}`;
+  $('#speechbar').hidden = false;
+  fillVoices();
+  speakText(text, { label: story.sub.label });
 }
 
 /* ------------------------------------------------------------ document */
@@ -459,6 +484,7 @@ function syncRibbonState() {
   set('#btnAsk, #btnAsk2', right === 'ai');
   set('#btnDoc', right === 'document');
   set('#btnQuestions', right === 'questions');
+  set('#btnStory', right === 'story');
 }
 
 function renderSideNotesSummary() {
@@ -503,6 +529,8 @@ function closeRightPanel() {
   $('#rightPanel').classList.add('hidden');
   syncRibbonState();
 }
+
+on('settings:invert', (on) => applyInvert(on));
 
 function applyInvert(on) {
   state.invert = !!on;
@@ -1186,8 +1214,57 @@ function wireCaptionScrub() {
   });
 }
 
+/* ---------------- detached caption window ---------------- */
+
+let poppedOut = false;
+
+/** Mirror a caption update to the detached window when one is open. */
+function pushToPopout(msg) {
+  if (poppedOut) window.api.popout.update(msg);
+}
+
+async function popOutCaptions() {
+  const r = $('#teleprompter').getBoundingClientRect();
+  await window.api.popout.open({
+    width: Math.max(420, Math.round(r.width)),
+    height: 220,
+    x: Math.round(window.screenX + r.left),
+    y: Math.round(window.screenY + r.top)
+  });
+  poppedOut = true;
+  $('#teleprompter').hidden = true;
+  $('#tpPopout').classList.add('active');
+  // Send the current state so the window isn't blank on arrival.
+  const st = readingState();
+  if (st.text) {
+    pushToPopout({ kind: 'sentence', text: st.text, index: st.sentence, total: st.total, page: st.page, remainingMs: 0 });
+  }
+  pushToPopout({ kind: 'state', playing: speech.playing, paused: speech.paused });
+  toast('Captions popped out — they stay above other apps.');
+}
+
+function dockCaptions() {
+  poppedOut = false;
+  $('#tpPopout').classList.remove('active');
+  $('#teleprompter').hidden = !(teleprompterOn && (speech.playing || speech.paused));
+}
+
 function wireTeleprompter() {
   wireCaptionScrub();
+
+  $('#tpPopout').addEventListener('click', async () => {
+    if (poppedOut) {
+      await window.api.popout.close();
+      dockCaptions();
+    } else {
+      await popOutCaptions();
+    }
+  });
+
+  window.api.popout.onClosed(() => dockCaptions());
+  window.api.popout.onCommand((name) => {
+    if (name === 'toggle') speechToggle();
+  });
 
   // Clicking a word in the captions moves the voice to it.
   $('#tpLine').addEventListener('click', (e) => {
@@ -1206,7 +1283,8 @@ function wireTeleprompter() {
   wireTeleprompterDrag();
 
   on('speech:sentence', ({ text, index, total, page, remainingMs }) => {
-    if (!teleprompterOn) return;
+    pushToPopout({ kind: 'sentence', text, index, total, page, remainingMs });
+    if (!teleprompterOn || poppedOut) return;
     $('#teleprompter').hidden = false;
     renderTeleprompterLine(text);
     $('#tpMeta').textContent = `p. ${page} · sentence ${index + 1} of ${total}`;
@@ -1215,14 +1293,16 @@ function wireTeleprompter() {
   });
 
   on('speech:word', ({ wordStart, wordEnd, remainingMs }) => {
-    if (!teleprompterOn) return;
+    pushToPopout({ kind: 'word', wordStart, wordEnd, remainingMs });
+    if (!teleprompterOn || poppedOut) return;
     markTeleprompterWord(wordStart, wordEnd);
     $('#tpLeft').textContent = `${fmtClock(remainingMs)} left on this page`;
   });
 
   on('speech:changed', () => {
     const active = speech.playing || speech.paused;
-    $('#teleprompter').hidden = !(teleprompterOn && active);
+    pushToPopout({ kind: 'state', playing: speech.playing, paused: speech.paused });
+    $('#teleprompter').hidden = poppedOut || !(teleprompterOn && active);
   });
 }
 
@@ -1231,6 +1311,16 @@ function wireTeleprompter() {
 function wireDocument() {
   $('#btnDoc').addEventListener('click', () => toggleRightPanel('document'));
   $('#btnQuestions').addEventListener('click', () => toggleRightPanel('questions'));
+  $('#btnStory').addEventListener('click', () => toggleRightPanel('story'));
+
+  // Reading a story aloud goes through the same voice, with its own text.
+  on('story:read', (story) => speakStory(story));
+  on('story:toDocument', (story) => {
+    const md = `## ${story.title}\n\n${story.body}\n\n*— retold from pages ${story.source.from}–${story.source.to}*`;
+    insertMarkdown(md);
+    openRightPanel('document');
+    toast('Added to the document');
+  });
   $('#btnDocSnap').addEventListener('click', toggleSplit);
   $('#rightSnap').addEventListener('click', toggleSplit);
 }
@@ -1295,7 +1385,8 @@ function handleMenu(action) {
     export: exportNotes,
     reveal: () => $('#btnRevealSidecar').click(),
     find: () => openLeftPanel('search'),
-    settings: showOnboarding,
+    settings: () => openSettings(),
+    tour: () => startTour(),
     checkUpdates: async () => {
       const info = await window.api.update.check();
       if (info.upToDate) toast(`You're on the latest build (${info.current}).`);

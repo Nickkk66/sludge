@@ -400,3 +400,4 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
 }
 #viewerWrap.tool-deadzone .page { cursor: crosshair; }
 #viewerWrap.tool-deadzone .textLayer { user-select: none; pointer-events: none; }
+.tp-size.active { background: var(--accent-soft); color: var(--accent); }

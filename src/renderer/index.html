@@ -22,6 +22,9 @@
     <button class="icon-btn" id="btnAiTop" title="Ask AI (⌘4)">
       <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5 10.2 10.8 5.5 9l4.7-1.3z"/><circle cx="18" cy="17.5" r="2.2"/></svg>
     </button>
+    <button class="icon-btn" id="btnSettings" title="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.6 1.6 0 008 19.4a1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 110-4h.1A1.6 1.6 0 004.6 8a1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H21a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>
+    </button>
     <button class="icon-btn" id="btnLayouts" title="Setups — arrange the window in one click">
       <svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M10 4.5v15M10 12h11"/></svg>
     </button>
@@ -42,6 +45,7 @@
   <button class="rtab" data-ribbon="ai">AI</button>
   <button class="rtab" data-ribbon="document">Document</button>
   <button class="rtab" data-ribbon="questions">Questions</button>
+  <button class="rtab" data-ribbon="story">Story</button>
 </nav>
 
 <div id="ribbon">
@@ -194,6 +198,17 @@
     <div class="ribbon-hint">Load a worksheet and every question gets answered from this PDF and your notes — with citations.</div>
   </div>
 
+
+  <!-- Story -->
+  <div class="ribbon-page" data-page="story">
+    <button class="rb" id="btnStory">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="9" cy="10.5" r="1"/><circle cx="15" cy="10.5" r="1"/><path d="M8.6 14.6a4.6 4.6 0 006.8 0"/><path d="M12 3.5V2M12 2l2 1"/></svg>
+      <span>Story Mode</span>
+    </button>
+    <div class="rb-spacer"></div>
+    <div class="ribbon-hint">A chapter retold as a Reddit post — same facts, told by someone who was there. A way in, not a replacement.</div>
+  </div>
+
 <!-- ===================== color bar ===================== -->
 <div id="colorbar" hidden>
   <span class="cb-icon">
@@ -332,7 +347,7 @@
           </svg>
         </div>
         <h1 id="welcomeGreeting">Sludge</h1>
-        <p class="sub" id="welcomeSub">Read a PDF, highlight it, keep your notes together, and ask a local AI about both — all offline.</p>
+        <p class="sub" id="welcomeSub">Let’s get to reading.</p>
 
         <div id="welcomeResume" hidden>
           <button class="resume-card" id="resumeBtn">
@@ -363,6 +378,7 @@
         <button class="rt" data-right="ai">Ask AI</button>
         <button class="rt" data-right="document">Document</button>
         <button class="rt" data-right="questions">Questions</button>
+        <button class="rt" data-right="story">Story</button>
       </div>
       <button class="panel-close" id="rightSnap" title="Split view — widen this panel">
         <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M13 5v14"/></svg>
@@ -412,6 +428,11 @@
       <!-- questions -->
       <div class="panel-view" data-view="questions">
         <div id="questionsView" class="questions-view"></div>
+      </div>
+
+      <!-- story -->
+      <div class="panel-view" data-view="story">
+        <div id="storyView" class="story-view"></div>
       </div>
 
       <!-- ai -->
@@ -511,6 +532,34 @@
     <div class="modal-body"><div id="libraryGrid"></div></div>
     <div class="modal-foot">
       <button class="big-btn primary" id="libraryAdd">Add a PDF…</button>
+    </div>
+  </div>
+</div>
+
+<div id="settingsModal" class="modal hidden">
+  <div class="modal-card settings-card">
+    <div class="modal-head">
+      <h2>Settings</h2>
+      <button class="panel-close" id="settingsClose">✕</button>
+    </div>
+    <div class="settings-body">
+      <nav class="settings-nav" id="settingsNav"></nav>
+      <div class="settings-pane" id="settingsPane"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tourOverlay" class="tour-overlay hidden">
+  <div class="tour-hole" id="tourHole"></div>
+  <div class="tour-card" id="tourCard">
+    <div class="tour-step" id="tourStep"></div>
+    <h3 id="tourTitle"></h3>
+    <p id="tourBody"></p>
+    <div class="tour-actions">
+      <button class="link-btn" id="tourSkip">Skip</button>
+      <div class="grow"></div>
+      <button id="tourBack">Back</button>
+      <button class="primary" id="tourNext">Next</button>
     </div>
   </div>
 </div>
@@ -635,6 +684,9 @@
     <span class="tp-meta" id="tpMeta"></span>
     <div class="tp-progress" id="tpProgress" title="Drag to jump to another sentence"><i id="tpBar"></i></div>
     <span class="tp-left" id="tpLeft"></span>
+    <button class="tp-size" id="tpPopout" title="Pop out — keeps the captions on top of other apps">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14L20 4M20 4h-6M20 4v6"/><path d="M18 13v6a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h6"/></svg>
+    </button>
     <button class="tp-size" id="tpSmaller" title="Smaller text">A−</button>
     <button class="tp-size" id="tpBigger" title="Bigger text">A+</button>
     <button class="tp-close" id="tpClose" title="Hide the reading panel">✕</button>

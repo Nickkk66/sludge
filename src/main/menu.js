@@ -13,7 +13,8 @@ module.exports = function buildMenu(getWin) {
       submenu: [
         { role: 'about' },
         { type: 'separator' },
-        { label: 'About You…', accelerator: 'Cmd+,', click: send('settings') },
+        { label: 'Settings…', accelerator: 'Cmd+,', click: send('settings') },
+        { label: 'Walkthrough', click: send('tour') },
         { label: 'Check for Updates…', click: send('checkUpdates') },
         { type: 'separator' },
         { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }

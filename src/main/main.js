@@ -17,6 +17,7 @@ const buildMenu = require('./menu');
 app.setName('Sludge');
 
 let win = null;
+let popout = null;
 let rendererReady = false;
 const activeDownloads = new Map();
 
@@ -50,6 +51,18 @@ function createWindow() {
   });
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+
+  // A file from the command line or from Finder is delivered two ways: the
+  // renderer asks for it on boot, and this pushes it shortly after load. Either
+  // alone has been enough to lose a file to a timing quirk.
+  win.webContents.on('did-finish-load', () => {
+    setTimeout(() => {
+      if (!pendingOpenPath || win.webContents.isDestroyed()) return;
+      const queued = pendingOpenPath;
+      pendingOpenPath = null;
+      win.webContents.send('open-file', queued);
+    }, 900);
+  });
   if (process.argv.includes('--dev')) {
     win.webContents.openDevTools({ mode: 'detach' });
     // Mirror renderer console into the terminal so a headless run is debuggable.
@@ -254,6 +267,73 @@ handle('export:save', async (defaultName, content) => {
   return res.filePath;
 });
 
+/* -------------------------------------------------------- caption pop-out */
+
+/**
+ * A small always-on-top window carrying the captions, so the reading can be
+ * followed while another app has focus.
+ */
+function createPopout(bounds) {
+  if (popout && !popout.isDestroyed()) {
+    popout.show();
+    popout.focus();
+    return popout;
+  }
+  popout = new BrowserWindow({
+    width: (bounds && bounds.width) || 620,
+    height: (bounds && bounds.height) || 210,
+    x: bounds && bounds.x,
+    y: bounds && bounds.y,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    minWidth: 320,
+    minHeight: 140,
+    webPreferences: {
+      preload: path.join(__dirname, 'popout-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  // Above full-screen apps too, which is where this is most useful.
+  popout.setAlwaysOnTop(true, 'screen-saver');
+  popout.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  popout.loadFile(path.join(__dirname, '..', 'renderer', 'popout.html'));
+
+  popout.on('closed', () => {
+    popout = null;
+    if (win && !win.webContents.isDestroyed()) win.webContents.send('popout:closed');
+  });
+  return popout;
+}
+
+handle('popout:open', async (bounds) => {
+  createPopout(bounds);
+  return true;
+});
+
+handle('popout:close', async () => {
+  if (popout && !popout.isDestroyed()) popout.close();
+  return true;
+});
+
+handle('popout:isOpen', async () => !!(popout && !popout.isDestroyed()));
+
+ipcMain.on('popout:update', (_e, msg) => {
+  if (popout && !popout.isDestroyed()) popout.webContents.send('popout:update', msg);
+});
+
+ipcMain.on('popout:command', (_e, name) => {
+  if (name === 'dock') {
+    if (popout && !popout.isDestroyed()) popout.close();
+    return;
+  }
+  if (win && !win.webContents.isDestroyed()) win.webContents.send('popout:command', name);
+});
+
 /* -------------------------------------------------------- focus video */
 
 handle('media:list', async () => media.list());
@@ -319,6 +399,8 @@ handle('ai:status', async (autostart) => ollama.status({ autostart: autostart !=
 handle('ai:warm', async (model) => ollama.warm(model));
 
 handle('ai:rewrite', async (payload) => ollama.rewrite(payload));
+
+handle('ai:story', async (payload) => ollama.story(payload));
 
 handle('ai:retrieve', async ({ query, docId, annotations, currentPage }) => {
   const index = await store.getTextIndex(docId);

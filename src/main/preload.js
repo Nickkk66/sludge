@@ -36,6 +36,15 @@ contextBridge.exposeInMainWorld('api', {
     read: (filePath) => call('questions:read', filePath)
   },
 
+  popout: {
+    open: (bounds) => call('popout:open', bounds),
+    close: () => call('popout:close'),
+    isOpen: () => call('popout:isOpen'),
+    update: (msg) => ipcRenderer.send('popout:update', msg),
+    onCommand: (cb) => ipcRenderer.on('popout:command', (_e, name) => cb(name)),
+    onClosed: (cb) => ipcRenderer.on('popout:closed', () => cb())
+  },
+
   update: {
     check: () => call('update:check'),
     open: (url) => call('update:open', url),
@@ -64,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
     retrieve: (payload) => call('ai:retrieve', payload),
     warm: (model) => call('ai:warm', model),
     rewrite: (payload) => call('ai:rewrite', payload),
+    story: (payload) => call('ai:story', payload),
     ask: (payload) => ipcRenderer.send('ai:ask', payload),
     stop: (streamId) => ipcRenderer.send('ai:stop', streamId),
     onToken: (cb) => ipcRenderer.on('ai:token', (_e, p) => cb(p)),

@@ -131,9 +131,7 @@ export async function renderGreeting() {
 
   if (last) {
     const title = last.title || last.name.replace(/\.pdf$/i, '');
-    sub.textContent = profile.name
-      ? `Want to keep reading ${title}?`
-      : `Pick up where you left off in ${title}.`;
+    sub.textContent = `Let's get back into ${title}.`;
     resume.hidden = false;
     $('#resumeName').textContent = title;
     $('#resumeMeta').textContent = [
@@ -146,8 +144,6 @@ export async function renderGreeting() {
     $('#resumeBtn').onclick = () => emit('doc:request', last.path);
   } else {
     resume.hidden = true;
-    sub.textContent = profile.name
-      ? 'Open a PDF and I’ll read it, mark it up, and answer questions about it — all on this machine.'
-      : 'Read a PDF, highlight it, keep your notes together, and ask a local AI about both — all offline.';
+    sub.textContent = 'Let’s get to reading.';
   }
 }

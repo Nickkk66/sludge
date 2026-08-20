@@ -40,6 +40,8 @@ export async function refreshAiStatus({ autostart = true } = {}) {
     // The scan picker needs the same list, ranked its own way.
     const { setModels } = await import('./scan.js');
     setModels(info.models);
+    const { setSettingsModels } = await import('./settings.js');
+    setSettingsModels(info.models);
     const ranked = [...info.models].sort((a, b) => (a.size || 0) - (b.size || 0));
     select.replaceChildren(...ranked.map((m) => el('option', {
       value: m.name,

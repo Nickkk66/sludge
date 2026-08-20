@@ -489,6 +489,14 @@ export function initDocNotes() {
   on('doc:loaded', () => updateStats());
 }
 
+/** Append a block of Markdown to the document. */
+export function insertMarkdown(md) {
+  if (!editor) return;
+  for (const node of markdownToNodes(md)) editor.append(node);
+  placeCaretAtEnd(editor.lastElementChild);
+  onInput();
+}
+
 /** Pull a highlight into the document — used by the notes panel's "send" action. */
 export function insertQuote(annotation) {
   if (!editor) return;

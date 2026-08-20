@@ -603,3 +603,122 @@
   font-size: 12.5px; line-height: 1.7;
 }
 .doc-raw:focus { border: none; }
+
+/* ---------- settings ---------- */
+.settings-card { width: min(760px, 92vw); height: min(600px, 86vh); }
+.settings-body { flex: 1; min-height: 0; display: flex; }
+.settings-nav {
+  flex: none; width: 172px; padding: 12px 8px;
+  border-right: 1px solid var(--line-soft); overflow: auto;
+}
+.settings-nav button {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 11px; border-radius: 7px; margin-bottom: 2px;
+  color: var(--fg-2); font-size: 12.5px;
+}
+.settings-nav button:hover { background: var(--bg-3); color: var(--fg); }
+.settings-nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.settings-pane { flex: 1; min-width: 0; overflow: auto; padding: 18px 22px 26px; }
+.set-group { margin-bottom: 26px; }
+.set-group > h4 { margin: 0 0 4px; font-size: 13.5px; }
+.set-group > .set-hint { margin: 0 0 14px; color: var(--fg-3); font-size: 11.5px; line-height: 1.55; }
+.set-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 11px 0; border-bottom: 1px solid var(--line-soft);
+}
+.set-row:last-child { border-bottom: none; }
+.set-label { flex: 1; min-width: 0; }
+.set-label b { display: block; font-size: 12.5px; font-weight: 500; margin-bottom: 2px; }
+.set-label small { color: var(--fg-3); font-size: 11px; line-height: 1.5; }
+.set-control { flex: none; display: flex; align-items: center; gap: 8px; }
+.set-control select, .set-control input[type="text"] { min-width: 190px; font-size: 12px; }
+.set-control input[type="range"] { width: 130px; accent-color: var(--accent); }
+.set-control button {
+  padding: 6px 13px; border-radius: 7px; font-size: 12px;
+  background: var(--bg-3); border: 1px solid var(--line);
+}
+.set-control button:hover { background: var(--bg-raise); }
+.set-control button.danger:hover { border-color: #e2584d; color: #e2584d; }
+.switch { position: relative; width: 38px; height: 22px; flex: none; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span {
+  position: absolute; inset: 0; border-radius: 22px; cursor: pointer;
+  background: var(--bg-raise); border: 1px solid var(--line); transition: .15s;
+}
+.switch span::before {
+  content: ''; position: absolute; width: 16px; height: 16px; left: 2px; top: 2px;
+  border-radius: 50%; background: var(--fg-3); transition: .15s;
+}
+.switch input:checked + span { background: var(--accent); border-color: var(--accent); }
+.switch input:checked + span::before { transform: translateX(16px); background: #fff; }
+.set-path { color: var(--fg-3); font-size: 11px; word-break: break-all; }
+
+/* ---------- tutorial ---------- */
+.tour-overlay { position: fixed; inset: 0; z-index: 990; }
+.tour-overlay::before {
+  content: ''; position: absolute; inset: 0;
+  background: rgba(0,0,0,.62); backdrop-filter: blur(1px);
+}
+.tour-hole {
+  position: absolute; border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.62), 0 0 0 3px var(--accent);
+  transition: all .28s cubic-bezier(.4,0,.2,1);
+  pointer-events: none;
+}
+.tour-card {
+  position: absolute; z-index: 2;
+  width: min(340px, calc(100vw - 40px));
+  background: var(--bg-raise); border: 1px solid var(--line);
+  border-radius: 12px; padding: 16px 18px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.55);
+  transition: all .28s cubic-bezier(.4,0,.2,1);
+}
+.tour-step { color: var(--accent); font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 6px; }
+.tour-card h3 { margin: 0 0 7px; font-size: 15px; }
+.tour-card p { margin: 0 0 16px; color: var(--fg-2); font-size: 12.5px; line-height: 1.6; }
+.tour-actions { display: flex; align-items: center; gap: 7px; }
+.tour-actions button {
+  padding: 7px 14px; border-radius: 7px; font-size: 12.5px;
+  background: var(--bg-3); border: 1px solid var(--line);
+}
+.tour-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tour-actions button:disabled { opacity: .4; cursor: default; }
+
+/* ---------- story mode ---------- */
+.story-view { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: auto; }
+.story-controls {
+  flex: none; display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap;
+  padding: 12px 13px; border-bottom: 1px solid var(--line-soft);
+}
+.story-controls label { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px; }
+.story-controls span { color: var(--fg-3); font-size: 11px; }
+.story-controls select { width: 100%; font-size: 12px; }
+.story-controls button {
+  padding: 7px 14px; border-radius: 7px; font-size: 12px; flex: none;
+  background: var(--accent); border: 1px solid var(--accent); color: #fff;
+}
+.story-controls button:disabled { opacity: .55; cursor: default; }
+
+.story-empty { padding: 26px 20px; text-align: center; }
+.story-empty h3 { margin: 0 0 8px; font-size: 15px; }
+.story-empty p { margin: 0 0 10px; color: var(--fg-2); font-size: 12.5px; line-height: 1.6; }
+.story-caveat { color: var(--fg-3) !important; font-size: 11.5px !important; }
+.story-busy { display: flex; align-items: center; gap: 10px; padding: 22px 18px; color: var(--fg-3); font-size: 12.5px; }
+
+.reddit-post { padding: 14px 14px 6px; }
+.rp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.rp-sub { color: var(--accent); font-size: 12px; font-weight: 700; }
+.rp-dot, .rp-meta { color: var(--fg-3); font-size: 11px; }
+.rp-title { margin: 0 0 10px; font-size: 17px; line-height: 1.35; letter-spacing: -.2px; }
+.rp-body { color: var(--fg); font-size: 13.5px; line-height: 1.7; user-select: text; }
+.rp-body p { margin: 0 0 12px; }
+.rp-foot {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--line-soft);
+}
+.rp-action {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-radius: 16px;
+  color: var(--fg-3); font-size: 11.5px; font-weight: 600;
+}
+.rp-action:hover { background: var(--bg-3); color: var(--fg); }

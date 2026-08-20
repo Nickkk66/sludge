@@ -246,7 +246,11 @@ export async function installedPacks() {
 
 export const currentPack = () => current;
 
-/** Restore the strip if it was on when the app last closed. */
+/**
+ * Restore where the strip lives and how big it is, but never start it playing.
+ * Launching an app should not put video and sound in front of you unasked —
+ * turning it on is a deliberate act each session.
+ */
 export async function restoreFocus() {
   const h = state.settings.focusHeight;
   const w = state.settings.focusWidth;
@@ -254,10 +258,7 @@ export async function restoreFocus() {
   if (w) document.documentElement.style.setProperty('--video-w', `${w}px`);
   dock = DOCKS.includes(state.settings.focusDock) ? state.settings.focusDock : 'bottom';
   setDock(dock);
-  if (!state.settings.focusOn) return;
-  const data = await window.api.media.list().catch(() => null);
-  if (!data) return;
-  packs = data.packs;
-  const pack = packs.find((p) => p.id === state.settings.focusPack && p.installed);
-  if (pack) showStrip(pack);
+  // Deliberately not restoring `focusOn`.
+  await window.api.settings.set({ focusOn: false }).catch(() => {});
 }
+
