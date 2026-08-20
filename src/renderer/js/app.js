@@ -55,6 +55,7 @@ async function boot() {
   initQuestions();
   initZones();
   initTabs();
+  wireRightResize();
   initSettings();
   initTour();
   initStory();
@@ -276,6 +277,52 @@ async function activateTab(id) {
   setSaveState('saved', 'Saved');
 }
 
+/** Drag the divider to resize the side panel. */
+function wireRightResize() {
+  const grip = $('#rightGrip');
+  if (!grip) return;
+  let dragging = false;
+
+  grip.addEventListener('mousedown', (e) => {
+    dragging = true;
+    document.body.classList.add('resizing-panel');
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const main = $('#main').getBoundingClientRect();
+    // Leave room for the page itself, however far the divider is dragged.
+    const width = Math.max(280, Math.min(main.right - main.left - 420, main.right - e.clientX));
+    document.documentElement.style.setProperty('--right-w', `${Math.round(width)}px`);
+    $('#main').classList.add('right-sized');
+    centreOverViewer();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('resizing-panel');
+    const width = $('#rightPanel').offsetWidth;
+    window.api.settings.set({ rightPanelWidth: width }).catch(() => {});
+    recentreCaptions();
+  });
+
+  // Double-click the divider to go back to the default width.
+  grip.addEventListener('dblclick', () => {
+    document.documentElement.style.removeProperty('--right-w');
+    $('#main').classList.remove('right-sized');
+    window.api.settings.set({ rightPanelWidth: null }).catch(() => {});
+    recentreCaptions();
+  });
+
+  const saved = state.settings.rightPanelWidth;
+  if (saved) {
+    document.documentElement.style.setProperty('--right-w', `${saved}px`);
+    $('#main').classList.add('right-sized');
+  }
+}
+
 function wireTabs() {
   on('tab:activate', (id) => activateTab(id));
   on('tab:new', () => showStartScreen());
@@ -459,6 +506,7 @@ function openLeftPanel(view, { force = false } = {}) {
   $$('#rail .rail-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === view));
   $$('#leftPanel .panel-view').forEach((p) => p.classList.toggle('active', p.dataset.view === view));
   $('#leftPanelTitle').textContent = PANEL_TITLES[view] || view;
+  recentreCaptions();
   if (view === 'search') setTimeout(() => $('#searchInput').focus(), 40);
   if (view === 'notes') renderSideNotesSummary();
   syncRibbonState();
@@ -514,6 +562,7 @@ function openRightPanel(view) {
   }
   if (view === 'document') setTimeout(() => $('#docEditor').focus(), 60);
   syncRibbonState();
+  recentreCaptions();
 }
 
 const toggleRightPanel = (view) => {
@@ -528,6 +577,7 @@ function closeRightPanel() {
   $('#main').classList.remove('right-open');
   $('#rightPanel').classList.add('hidden');
   syncRibbonState();
+  recentreCaptions();
 }
 
 on('settings:invert', (on) => applyInvert(on));
@@ -1090,8 +1140,36 @@ function setTeleprompterSpot(spot) {
   tp.dataset.spot = next;
   // Clear any inline offsets left over from a drag.
   tp.style.left = tp.style.top = tp.style.right = tp.style.bottom = '';
+  if (next === 'centre') centreOverViewer();
   window.api.settings.set({ teleprompterSpot: next }).catch(() => {});
 }
+
+/**
+ * Put the captions in the middle of the page area rather than the middle of
+ * the window. With a video docked left and the document open right, the dead
+ * space is the PDF column — centring on the window would sit them over one of
+ * the panels instead.
+ */
+function centreOverViewer() {
+  const tp = $('#teleprompter');
+  if (tp.dataset.spot !== 'centre') return;
+  const wrap = $('#viewerWrap').getBoundingClientRect();
+  if (!wrap.width) return;
+
+  // Fit the panel to the column it is sitting in.
+  const width = Math.max(320, Math.min(760, wrap.width - 48));
+  tp.style.width = `${Math.round(width)}px`;
+  tp.style.transform = 'none';
+  tp.style.left = `${Math.round(wrap.left + (wrap.width - width) / 2)}px`;
+  tp.style.right = 'auto';
+  tp.style.bottom = 'auto';
+
+  const h = tp.offsetHeight || 200;
+  tp.style.top = `${Math.round(wrap.top + (wrap.height - h) / 2)}px`;
+}
+
+// The column moves whenever a panel opens, the video docks, or the window resizes.
+const recentreCaptions = () => requestAnimationFrame(() => setTimeout(centreOverViewer, 40));
 
 /** Where a spot would put the panel, used for the drag preview and snapping. */
 function spotRect(spot, w, h) {
@@ -1286,6 +1364,7 @@ function wireTeleprompter() {
     pushToPopout({ kind: 'sentence', text, index, total, page, remainingMs });
     if (!teleprompterOn || poppedOut) return;
     $('#teleprompter').hidden = false;
+    recentreCaptions();
     renderTeleprompterLine(text);
     $('#tpMeta').textContent = `p. ${page} · sentence ${index + 1} of ${total}`;
     $('#tpBar').style.width = `${total ? ((index) / total) * 100 : 0}%`;

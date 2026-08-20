@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
   customLayouts: [],
   lastLayout: null,
   tourDone: false,
+  rightPanelWidth: null,
   focusHeight: 320,
   focusWidth: 380,
   zoom: 1,

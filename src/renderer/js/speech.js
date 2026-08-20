@@ -191,7 +191,9 @@ function speakCurrent() {
   const sentence = sentences[index];
   if (!sentence) return advancePage();
 
-  utterance = new SpeechSynthesisUtterance(sentence.text);
+  // Spoken text gets the same clean-up as the cached text; the DOM keeps the
+  // hyphens and ligatures the page was typeset with.
+  utterance = new SpeechSynthesisUtterance(speakableText(sentence.text));
   const voice = pickVoice();
   if (voice) {
     utterance.voice = voice;
@@ -245,6 +247,17 @@ function speakCurrent() {
   };
 
   synth.speak(utterance);
+}
+
+/** What the voice should say for a run of on-page text. */
+function speakableText(text) {
+  return String(text)
+    .replace(/([A-Za-z])[-\u2010\u2011]\s+([a-z])/g, '$1$2')
+    .replace(/\uFB00/g, 'ff').replace(/\uFB01/g, 'fi').replace(/\uFB02/g, 'fl')
+    .replace(/\uFB03/g, 'ffi').replace(/\uFB04/g, 'ffl')
+    .replace(/[\u00AD\u200B\u200C\u200D]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function wordLengthAt(text, at) {

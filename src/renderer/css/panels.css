@@ -4,7 +4,18 @@
   background: var(--bg-2);
 }
 #leftPanel  { border-right: 1px solid var(--line-soft); }
-#rightPanel { border-left: 1px solid var(--line-soft); }
+#rightPanel { border-left: 1px solid var(--line-soft); position: relative; }
+
+.panel-grip {
+  position: absolute; left: -3px; top: 0; bottom: 0; width: 7px;
+  cursor: ew-resize; z-index: 20;
+}
+.panel-grip::after {
+  content: ''; position: absolute; left: 2px; top: 0; bottom: 0; width: 2px;
+  background: transparent; transition: background .12s;
+}
+.panel-grip:hover::after, body.resizing-panel .panel-grip::after { background: var(--accent); }
+body.resizing-panel { cursor: ew-resize; user-select: none; }
 
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;

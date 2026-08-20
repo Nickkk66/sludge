@@ -18,6 +18,12 @@ body.video-left   #stage { flex-direction: row-reverse; }
 }
 #main.left-collapsed { grid-template-columns: var(--rail-w) 0 1fr 0; }
 #main.right-open     { grid-template-columns: var(--rail-w) var(--left-w) 1fr var(--right-w); }
+/* Dragging the divider sets --right-w directly, so the preset split widths
+   must not win over a width the reader chose by hand. */
+#main.right-open.right-sized,
+#main.right-open.right-sized.right-wide { grid-template-columns: var(--rail-w) var(--left-w) 1fr var(--right-w); }
+#main.left-collapsed.right-open.right-sized,
+#main.left-collapsed.right-open.right-sized.right-wide { grid-template-columns: var(--rail-w) 0 1fr var(--right-w); }
 #main.left-collapsed.right-open { grid-template-columns: var(--rail-w) 0 1fr var(--right-w); }
 
 /* ---------- rail ---------- */
@@ -305,7 +311,8 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
 /* Snap positions. Bottom is the default and where it returns on reset. */
 /* Centred vertically — for a layout where the middle of the window is the dead
    space between a docked video and a side panel. */
-#teleprompter[data-spot="centre"]       { left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); }
+/* Positioned from JS against the page column — see centreOverViewer. */
+#teleprompter[data-spot="centre"]       { bottom: auto; }
 #teleprompter[data-spot="bottom"]       { left: 50%; transform: translateX(-50%); bottom: 46px; top: auto; }
 #teleprompter[data-spot="bottom-left"]  { left: 20px; transform: none; bottom: 46px; top: auto; }
 #teleprompter[data-spot="bottom-right"] { right: 20px; left: auto; transform: none; bottom: 46px; top: auto; }
@@ -401,3 +408,14 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
 #viewerWrap.tool-deadzone .page { cursor: crosshair; }
 #viewerWrap.tool-deadzone .textLayer { user-select: none; pointer-events: none; }
 .tp-size.active { background: var(--accent-soft); color: var(--accent); }
+
+/* Selection sentinel — see bindSelectionFix in viewer.js. */
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
+.textLayer.selecting .endOfContent { top: 0; }

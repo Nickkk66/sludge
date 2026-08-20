@@ -205,11 +205,38 @@ export async function renderPage(n, force = false) {
     });
     await textLayer.render();
     entry.textLayer = textLayer;
+    bindSelectionFix(textDiv);
   } catch { /* a page without extractable text still renders fine */ }
 
   applyToolToLayer(textDiv);
   paintAnnotations(n, annoDiv);
   emit('page:rendered', n);
+}
+
+/**
+ * Keep a drag-selection from running away down the page.
+ *
+ * The text layer is a pile of absolutely-positioned spans whose DOM order is
+ * the order pdf.js found them, not the order they appear. When a drag ends
+ * past the last span the browser happily extends the selection to the end of
+ * the container. A sentinel element that only covers the page mid-drag gives
+ * the selection something to stop against.
+ */
+function bindSelectionFix(textDiv) {
+  if (textDiv.querySelector('.endOfContent')) return;
+  const end = document.createElement('div');
+  end.className = 'endOfContent';
+  textDiv.append(end);
+
+  textDiv.addEventListener('pointerdown', () => {
+    textDiv.classList.add('selecting');
+  });
+
+  const release = () => textDiv.classList.remove('selecting');
+  textDiv.addEventListener('pointerup', release);
+  textDiv.addEventListener('pointercancel', release);
+  // The pointer often comes up outside the page it started on.
+  window.addEventListener('pointerup', release);
 }
 
 function evictFarPages() {
@@ -408,7 +435,7 @@ export async function buildTextIndex(docId, onProgress) {
         const page = await pdf.getPage(p);
         const content = await page.getTextContent();
         const text = content.items.map((it) => (it.str || '') + (it.hasEOL ? '\n' : '')).join('');
-        pages[p - 1] = { page: p, text: text.replace(/[ \t]+/g, ' ').trim() };
+        pages[p - 1] = { page: p, text: cleanExtractedText(text) };
       } catch {
         pages[p - 1] = { page: p, text: '' };
       }
@@ -424,6 +451,33 @@ export async function buildTextIndex(docId, onProgress) {
   await window.api.index.save(docId, pages).catch(() => {});
   emit('index:ready', { cached: false });
   return pages;
+}
+
+/**
+ * Tidy text pulled out of a PDF so a voice reads it as written.
+ *
+ * Typeset books hyphenate across line breaks and use ligatures and typographic
+ * quotes; read aloud verbatim those become "sepa— ration" and mispronounced
+ * words. This is applied to the cached text the reader, the search and the AI
+ * all work from.
+ */
+export function cleanExtractedText(raw) {
+  return String(raw || '')
+    // A hyphen at end of line is a broken word, not punctuation.
+    .replace(/([A-Za-z])[-\u2010\u2011]\n([a-z])/g, '$1$2')
+    // Ligatures the voice would otherwise stumble over.
+    .replace(/\uFB00/g, 'ff').replace(/\uFB01/g, 'fi').replace(/\uFB02/g, 'fl')
+    .replace(/\uFB03/g, 'ffi').replace(/\uFB04/g, 'ffl').replace(/\uFB05/g, 'st')
+    // Typographic punctuation.
+    .replace(/[\u2018\u2019\u201B]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u2013\u2014]/g, '\u2014')
+    // Soft hyphens and zero-width characters are invisible but not silent.
+    .replace(/[\u00AD\u200B\u200C\u200D\uFEFF]/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .trim();
 }
 
 /* ------------------------------------------------------------ wiring */
