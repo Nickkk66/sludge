@@ -550,3 +550,56 @@
   color: var(--fg-3); font-size: 11.5px; line-height: 1.5;
   padding-left: 9px; border-left: 2px solid var(--line); margin-bottom: 6px;
 }
+
+/* ---------- live document editor ---------- */
+.doc-editor {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 18px 20px 40px;
+  outline: none; line-height: 1.65; font-size: 13.5px;
+  color: var(--fg); user-select: text;
+}
+.doc-editor:empty::before,
+.doc-editor > p:only-child:empty::before {
+  content: attr(data-placeholder);
+  color: var(--fg-3);
+  pointer-events: none;
+}
+.doc-editor h1 { font-size: 21px; margin: 18px 0 8px; font-weight: 650; letter-spacing: -.2px; }
+.doc-editor h2 { font-size: 17px; margin: 16px 0 7px; font-weight: 650; }
+.doc-editor h3 { font-size: 14.5px; margin: 14px 0 6px; font-weight: 650; }
+.doc-editor h1:first-child, .doc-editor h2:first-child, .doc-editor h3:first-child { margin-top: 0; }
+.doc-editor p { margin: 0 0 9px; }
+.doc-editor ul, .doc-editor ol { margin: 0 0 9px; padding-left: 22px; }
+.doc-editor li { margin-bottom: 3px; }
+.doc-editor blockquote {
+  margin: 0 0 9px; padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--accent); color: var(--fg-2);
+}
+.doc-editor pre {
+  margin: 0 0 9px; padding: 10px 12px; border-radius: 7px;
+  background: var(--bg-3); font-size: 12px; white-space: pre-wrap;
+}
+.doc-editor code { background: var(--bg-3); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+.doc-editor hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+.doc-editor strong { font-weight: 650; color: var(--fg); }
+
+.doc-editor .todo { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 5px; }
+.doc-editor .todo-box {
+  flex: none; width: 17px; height: 17px; margin-top: 2px;
+  border: 1.5px solid var(--line); border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: #fff; cursor: pointer; user-select: none;
+}
+.doc-editor .todo-box:hover { border-color: var(--accent); }
+.doc-editor .todo.done .todo-box { background: var(--accent); border-color: var(--accent); }
+.doc-editor .todo-text { flex: 1; min-width: 0; }
+.doc-editor .todo.done .todo-text { color: var(--fg-3); text-decoration: line-through; }
+
+/* Raw markdown view, for when you want to see what's actually stored. */
+.doc-raw {
+  flex: 1; min-height: 0; width: 100%;
+  padding: 18px 20px; border: none; border-radius: 0; resize: none;
+  background: var(--bg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px; line-height: 1.7;
+}
+.doc-raw:focus { border: none; }

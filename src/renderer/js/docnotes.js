@@ -1,6 +1,7 @@
 import { $, el, escapeHtml, renderMarkdown, debounce, toast, uid } from './util.js';
 import { state, emit, on } from './state.js';
 import { profilePrompt } from './profile.js';
+import { markdownToNodes, nodesToMarkdown, applyLineRule, currentBlock, placeCaretAtEnd, makeTodo } from './editor.js';
 
 /**
  * The long-form note document — a Markdown editor that lives beside the PDF.
@@ -13,7 +14,6 @@ import { profilePrompt } from './profile.js';
 
 let editor = null;
 let dirty = false;
-let previewOn = false;
 let slashMenu = null;
 
 /* ------------------------------------------------------------ blocks */
@@ -31,78 +31,158 @@ const BLOCKS = [
   { key: 'table',  label: 'Table',       hint: 'Two-column table',  apply: () => '| | |\n|---|---|\n| | |' }
 ];
 
-const INLINE = {
-  bold: ['**', '**'],
-  italic: ['*', '*'],
-  codeSpan: ['`', '`']
-};
-
 /* ------------------------------------------------------------ editing */
 
-function lineBounds(value, pos) {
-  const start = value.lastIndexOf('\n', pos - 1) + 1;
-  let end = value.indexOf('\n', pos);
-  if (end < 0) end = value.length;
-  return { start, end };
-}
+const INLINE = { bold: ['**', '**'], italic: ['*', '*'], codeSpan: ['`', '`'] };
 
-function replaceRange(start, end, text, caret) {
-  const before = editor.value.slice(0, start);
-  const after = editor.value.slice(end);
-  editor.value = before + text + after;
-  const at = caret === undefined ? start + text.length : caret;
-  editor.setSelectionRange(at, at);
-  editor.focus();
+/** Wrap the selection in an inline element, or unwrap it if already wrapped. */
+export function applyInline(kind) {
+  const tag = kind === 'bold' ? 'strong' : (kind === 'italic' ? 'em' : 'code');
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+
+  if (range.collapsed) {
+    const node = document.createElement(tag);
+    node.textContent = '\u200b';
+    range.insertNode(node);
+    placeCaretAtEnd(node);
+    onInput();
+    return;
+  }
+
+  // Already inside one of these? Strip it.
+  let anc = range.commonAncestorContainer;
+  if (anc.nodeType === Node.TEXT_NODE) anc = anc.parentNode;
+  const existing = anc.closest && anc.closest(tag);
+  if (existing) {
+    const text = document.createTextNode(existing.textContent);
+    existing.replaceWith(text);
+    onInput();
+    return;
+  }
+
+  const node = document.createElement(tag);
+  try {
+    node.append(range.extractContents());
+    range.insertNode(node);
+    placeCaretAtEnd(node);
+  } catch { /* selection spanned blocks; leave it be */ }
   onInput();
 }
 
+/** Turn the caret's block into the requested kind. */
 export function applyBlock(key) {
-  const block = BLOCKS.find((b) => b.key === key);
-  if (!block) return applyInline(key);
-  const { selectionStart } = editor;
-  const { start, end } = lineBounds(editor.value, selectionStart);
-  const line = editor.value.slice(start, end).replace(/^(#{1,6}\s+|[-*]\s+\[.\]\s+|[-*]\s+|\d+[.)]\s+|>\s+)/, '');
-  replaceRange(start, end, block.apply(line));
+  const block = currentBlock(editor);
+  if (!block) return;
+  const text = block.textContent.replace(/^(#{1,3}\s|[-*]\s\[.\]\s|[-*]\s|\d+[.)]\s|>\s)/, '');
+
+  const swap = (tag) => {
+    const next = document.createElement(tag);
+    next.textContent = text;
+    block.replaceWith(next);
+    placeCaretAtEnd(next);
+  };
+
+  switch (key) {
+    case 'h1': swap('h1'); break;
+    case 'h2': swap('h2'); break;
+    case 'h3': swap('h3'); break;
+    case 'quote': swap('blockquote'); break;
+    case 'code': {
+      const pre = document.createElement('pre');
+      pre.textContent = text;
+      block.replaceWith(pre);
+      placeCaretAtEnd(pre);
+      break;
+    }
+    case 'todo': {
+      const row = makeTodo(false, text);
+      block.replaceWith(row);
+      placeCaretAtEnd(row.querySelector('.todo-text'));
+      break;
+    }
+    case 'bullet':
+    case 'number': {
+      const list = document.createElement(key === 'bullet' ? 'ul' : 'ol');
+      const li = document.createElement('li');
+      li.textContent = text;
+      list.append(li);
+      block.replaceWith(list);
+      placeCaretAtEnd(li);
+      break;
+    }
+    case 'rule': {
+      const hr = document.createElement('hr');
+      const after = document.createElement('p');
+      after.append(document.createElement('br'));
+      block.replaceWith(hr);
+      hr.after(after);
+      placeCaretAtEnd(after);
+      break;
+    }
+    case 'table': {
+      const pre = document.createElement('pre');
+      pre.textContent = '| | |\n|---|---|\n| | |';
+      block.replaceWith(pre);
+      placeCaretAtEnd(pre);
+      break;
+    }
+    default: break;
+  }
+  onInput();
 }
 
-export function applyInline(kind) {
-  const pair = INLINE[kind] || INLINE[kind === 'code' ? 'codeSpan' : ''];
-  if (!pair) return;
-  const { selectionStart: a, selectionEnd: b } = editor;
-  const selected = editor.value.slice(a, b);
-  if (!selected) {
-    replaceRange(a, b, pair[0] + pair[1], a + pair[0].length);
-    return;
-  }
-  // Toggle off if the selection is already wrapped.
-  if (selected.startsWith(pair[0]) && selected.endsWith(pair[1])) {
-    const inner = selected.slice(pair[0].length, selected.length - pair[1].length);
-    replaceRange(a, b, inner, a + inner.length);
-    return;
-  }
-  replaceRange(a, b, pair[0] + selected + pair[1], b + pair[0].length + pair[1].length);
-}
-
-/** Enter continues the list you're in, and clears an empty bullet. */
+/**
+ * Enter inside an empty list item or tick box leaves the list, which is what
+ * every editor does and what fingers expect.
+ */
 function handleEnter(e) {
-  const { selectionStart } = editor;
-  const { start, end } = lineBounds(editor.value, selectionStart);
-  const line = editor.value.slice(start, end);
-  const m = line.match(/^(\s*)([-*]\s\[[ xX]\]\s|[-*]\s|(\d+)[.)]\s)/);
-  if (!m) return;
+  const block = currentBlock(editor);
+  if (!block) return;
 
-  const rest = line.slice(m[0].length);
-  if (!rest.trim()) {
-    // Empty list item: pressing Enter again should exit the list.
+  const isTodo = block.classList && block.classList.contains('todo');
+  const todoRow = isTodo ? block : (block.closest && block.closest('.todo'));
+
+  if (todoRow) {
     e.preventDefault();
-    replaceRange(start, end, '');
+    const body = todoRow.querySelector('.todo-text');
+    if (!body.textContent.trim()) {
+      const p = document.createElement('p');
+      p.append(document.createElement('br'));
+      todoRow.replaceWith(p);
+      placeCaretAtEnd(p);
+    } else {
+      const row = makeTodo(false, '');
+      todoRow.after(row);
+      placeCaretAtEnd(row.querySelector('.todo-text'));
+    }
+    onInput();
     return;
   }
-  e.preventDefault();
-  let marker = m[2];
-  if (m[3]) marker = `${Number(m[3]) + 1}. `;
-  else if (/\[[xX]\]/.test(marker)) marker = marker.replace(/\[[xX]\]/, '[ ]');
-  replaceRange(selectionStart, selectionStart, `\n${m[1]}${marker}`);
+
+  if (block.tagName === 'LI' && !block.textContent.trim()) {
+    e.preventDefault();
+    const list = block.parentElement;
+    const p = document.createElement('p');
+    p.append(document.createElement('br'));
+    list.after(p);
+    block.remove();
+    if (!list.children.length) list.remove();
+    placeCaretAtEnd(p);
+    onInput();
+    return;
+  }
+
+  // Leaving a heading or quote starts an ordinary paragraph.
+  if (/^(H1|H2|H3|BLOCKQUOTE)$/.test(block.tagName)) {
+    e.preventDefault();
+    const p = document.createElement('p');
+    p.append(document.createElement('br'));
+    block.after(p);
+    placeCaretAtEnd(p);
+    onInput();
+  }
 }
 
 /* ------------------------------------------------------------ slash menu */
@@ -141,29 +221,26 @@ function moveSlash(delta) {
 
 function chooseSlash(key) {
   // Drop the "/" that opened the menu before inserting the block.
-  const pos = editor.selectionStart;
-  const at = editor.value.lastIndexOf('/', pos - 1);
-  if (at >= 0) replaceRange(at, pos, '');
+  const block = currentBlock(editor);
+  if (block) block.textContent = block.textContent.replace(/\/$/, '');
   closeSlashMenu();
   applyBlock(key);
 }
 
-/** Approximate on-screen position of the caret, for menu placement. */
+/** On-screen caret position, for placing the block menu. */
 function caretRect() {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount) {
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    if (r.width || r.height) return { top: r.top, bottom: r.bottom, left: r.left };
+    const block = currentBlock(editor);
+    if (block) {
+      const b = block.getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom, left: b.left };
+    }
+  }
   const box = editor.getBoundingClientRect();
-  const style = getComputedStyle(editor);
-  const mirror = el('div', { class: 'caret-mirror' });
-  mirror.style.cssText = `position:fixed;visibility:hidden;white-space:pre-wrap;word-wrap:break-word;
-    width:${editor.clientWidth}px;font:${style.font};line-height:${style.lineHeight};padding:${style.padding};`;
-  mirror.textContent = editor.value.slice(0, editor.selectionStart);
-  const marker = el('span', {}, '​');
-  mirror.append(marker);
-  document.body.append(mirror);
-  const m = marker.getBoundingClientRect();
-  const top = box.top + (m.top - mirror.getBoundingClientRect().top) - editor.scrollTop;
-  const left = box.left + (m.left - mirror.getBoundingClientRect().left);
-  mirror.remove();
-  return { top, bottom: top + 20, left };
+  return { top: box.top + 40, bottom: box.top + 60, left: box.left + 20 };
 }
 
 /* ------------------------------------------------------------ AI actions */
@@ -179,8 +256,10 @@ const AI_ACTIONS = [
 
 function openAiMenu(anchor) {
   document.querySelectorAll('.ctx-menu').forEach((n) => n.remove());
-  const sel = editor.value.slice(editor.selectionStart, editor.selectionEnd);
-  const scope = sel.trim() ? 'selection' : 'whole document';
+  const selection = window.getSelection();
+  const hasSel = selection && !selection.isCollapsed
+    && selection.toString().trim() && editor.contains(selection.anchorNode);
+  const scope = hasSel ? 'selection' : 'whole document';
   const menu = el('div', { class: 'ctx-menu' },
     el('div', { class: 'ctx-head' }, `Apply to ${scope}`),
     ...AI_ACTIONS.map((a) => el('button', {
@@ -205,11 +284,11 @@ async function runAiAction(action) {
     toast('No local AI model available — check the AI tab.');
     return;
   }
-  const a = editor.selectionStart;
-  const b = editor.selectionEnd;
-  const hasSel = editor.value.slice(a, b).trim().length > 0;
-  const target = hasSel ? editor.value.slice(a, b) : editor.value;
+  const sel = window.getSelection();
+  const hasSel = sel && !sel.isCollapsed && sel.toString().trim() && editor.contains(sel.anchorNode);
+  const target = hasSel ? sel.toString() : getMarkdown();
   if (!target.trim()) return toast('Nothing to work on yet.');
+  const savedRange = hasSel ? sel.getRangeAt(0).cloneRange() : null;
 
   setDocStatus(`${action.label}…`, true);
   try {
@@ -221,9 +300,22 @@ async function runAiAction(action) {
     });
     const clean = String(result || '').trim();
     if (!clean) throw new Error('the model returned nothing');
-    if (hasSel) replaceRange(a, b, clean, a + clean.length);
-    else { editor.value = clean; onInput(); }
-    setDocStatus('AI edit applied — ⌘Z to undo', false);
+    if (hasSel && savedRange) {
+      savedRange.deleteContents();
+      const nodes = markdownToNodes(clean);
+      // A single paragraph goes inline; anything longer becomes real blocks.
+      if (nodes.length === 1 && nodes[0].tagName === 'P') {
+        savedRange.insertNode(document.createTextNode(nodes[0].textContent));
+      } else {
+        const block = currentBlock(editor) || editor.lastElementChild;
+        let anchor = block;
+        for (const node of nodes) { anchor.after(node); anchor = node; }
+      }
+    } else {
+      setMarkdown(clean);
+    }
+    onInput();
+    setDocStatus('AI edit applied', false);
   } catch (err) {
     setDocStatus('', false);
     toast(`AI edit failed: ${err.message || err}`);
@@ -241,16 +333,15 @@ const save = debounce(() => {
 function onInput() {
   dirty = true;
   updateStats();
-  if (previewOn) renderPreview();
   setDocStatus('Saving…', false);
   save();
 }
 
 function updateStats() {
-  const text = editor.value.trim();
+  const text = editor.textContent.trim();
   const words = text ? text.split(/\s+/).length : 0;
-  const todo = (editor.value.match(/^\s*[-*]\s\[ \]/gm) || []).length;
-  const done = (editor.value.match(/^\s*[-*]\s\[[xX]\]/gm) || []).length;
+  const todo = editor.querySelectorAll('.todo:not(.done)').length;
+  const done = editor.querySelectorAll('.todo.done').length;
   $('#docStats').textContent =
     `${words} word${words === 1 ? '' : 's'}` + (todo + done ? ` · ${done}/${todo + done} done` : '');
 }
@@ -261,62 +352,49 @@ function setDocStatus(text, busy) {
   node.classList.toggle('busy', !!busy);
 }
 
-export const getMarkdown = () => (editor ? editor.value : '');
+export const getMarkdown = () => (editor ? nodesToMarkdown(editor) : '');
 
 export function setMarkdown(md) {
   if (!editor) return;
-  editor.value = md || '';
+  if (rawMode) {
+    $('#docRaw').value = md || '';
+  }
+  editor.replaceChildren(...markdownToNodes(md || ''));
   dirty = false;
   updateStats();
-  if (previewOn) renderPreview();
   setDocStatus('', false);
 }
 
-/* ------------------------------------------------------------ preview */
+/* ------------------------------------------------------------ raw markdown */
 
-function renderPreview() {
-  $('#docPreview').innerHTML = renderDocMarkdown(editor.value);
-}
+let rawMode = false;
 
-/** Markdown for the note document — headings and checkboxes on top of the base renderer. */
-function renderDocMarkdown(md) {
-  const lines = String(md).split('\n');
-  const out = [];
-  let buffer = [];
-  const flush = () => {
-    if (buffer.length) {
-      out.push(renderMarkdown(buffer.join('\n')));
-      buffer = [];
-    }
-  };
-  for (const line of lines) {
-    const h = line.match(/^(#{1,6})\s+(.*)$/);
-    const todo = line.match(/^\s*[-*]\s\[([ xX])\]\s+(.*)$/);
-    if (h) {
-      flush();
-      const level = h[1].length;
-      out.push(`<h${level}>${escapeHtml(h[2])}</h${level}>`);
-    } else if (todo) {
-      flush();
-      const done = todo[1].toLowerCase() === 'x';
-      out.push(`<div class="md-todo${done ? ' done' : ''}"><span>${done ? '☑' : '☐'}</span>${escapeHtml(todo[2])}</div>`);
-    } else if (/^\s*---+\s*$/.test(line)) {
-      flush();
-      out.push('<hr />');
+/** Show the Markdown the document is actually stored as. */
+export function toggleRawMarkdown(force) {
+  rawMode = force === undefined ? !rawMode : !!force;
+  const body = $('.doc-body');
+  const raw = $('#docRaw');
+  $('#btnDocMarkdown').classList.toggle('active', rawMode);
+
+  if (rawMode) {
+    const area = raw || el('textarea', { id: 'docRaw', class: 'doc-raw', spellcheck: 'false' });
+    area.value = getMarkdown();
+    editor.hidden = true;
+    if (!raw) body.append(area);
+    area.hidden = false;
+    area.focus();
+  } else {
+    if (raw) {
+      // Take back whatever was typed in the raw view.
+      const md = raw.value;
+      raw.hidden = true;
+      editor.hidden = false;
+      setMarkdown(md);
+      onInput();
     } else {
-      buffer.push(line);
+      editor.hidden = false;
     }
   }
-  flush();
-  return out.join('');
-}
-
-export function togglePreview(force) {
-  previewOn = force === undefined ? !previewOn : !!force;
-  $('#docPreview').hidden = !previewOn;
-  $('#docEditor').classList.toggle('half', previewOn);
-  $('#btnDocPreview').classList.toggle('active', previewOn);
-  if (previewOn) renderPreview();
 }
 
 export async function exportDocument() {
@@ -331,8 +409,13 @@ export async function exportDocument() {
 
 export function initDocNotes() {
   editor = $('#docEditor');
+  if (!editor.children.length) editor.append(document.createElement('p'));
 
-  editor.addEventListener('input', onInput);
+  editor.addEventListener('input', () => {
+    // Formatting is applied as you type, so the marker never survives.
+    applyLineRule(currentBlock(editor));
+    onInput();
+  });
 
   editor.addEventListener('keydown', (e) => {
     if (slashMenu) {
@@ -354,19 +437,38 @@ export function initDocNotes() {
     }
 
     if (e.key === 'Enter' && !e.shiftKey) handleEnter(e);
-
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      replaceRange(editor.selectionStart, editor.selectionEnd, '  ');
-    }
   });
 
-  // "/" at the start of an empty line opens the block menu.
   editor.addEventListener('keyup', (e) => {
     if (e.key !== '/') return;
-    const pos = editor.selectionStart;
-    const { start } = lineBounds(editor.value, pos);
-    if (editor.value.slice(start, pos).trim() === '/') openSlashMenu();
+    const block = currentBlock(editor);
+    if (block && block.textContent.trim() === '/') openSlashMenu();
+  });
+
+  // Paste as plain text; pasted HTML would bring foreign styling with it.
+  editor.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    if (!text) return;
+    const nodes = markdownToNodes(text);
+    const block = currentBlock(editor);
+    if (block && nodes.length) {
+      let anchor = block;
+      for (const node of nodes) { anchor.after(node); anchor = node; }
+      if (!block.textContent.trim()) block.remove();
+      placeCaretAtEnd(anchor);
+    }
+    onInput();
+  });
+
+  // Clicking a tick box toggles it.
+  editor.addEventListener('click', (e) => {
+    const box = e.target.closest('.todo-box');
+    if (!box) return;
+    const row = box.closest('.todo');
+    row.classList.toggle('done');
+    box.textContent = row.classList.contains('done') ? '\u2713' : '';
+    onInput();
   });
 
   editor.addEventListener('blur', () => setTimeout(closeSlashMenu, 150));
@@ -377,28 +479,12 @@ export function initDocNotes() {
     if (!btn) return;
     const key = btn.dataset.md;
     if (key === 'bold' || key === 'italic') applyInline(key);
-    else if (key === 'code') applyBlock('code');
     else applyBlock(key);
   });
 
   $('#docAiBtn').addEventListener('click', (e) => openAiMenu(e.currentTarget));
-  $('#btnDocPreview').addEventListener('click', () => togglePreview());
+  $('#btnDocMarkdown').addEventListener('click', () => toggleRawMarkdown());
   $('#btnDocExport').addEventListener('click', exportDocument);
-
-  // Clicking a checkbox in the preview ticks it in the source.
-  $('#docPreview').addEventListener('click', (e) => {
-    const row = e.target.closest('.md-todo');
-    if (!row) return;
-    const rows = [...$('#docPreview').querySelectorAll('.md-todo')];
-    const nth = rows.indexOf(row);
-    let seen = -1;
-    editor.value = editor.value.replace(/^(\s*[-*]\s)\[([ xX])\]/gm, (m, lead, mark) => {
-      seen += 1;
-      if (seen !== nth) return m;
-      return `${lead}[${mark.toLowerCase() === 'x' ? ' ' : 'x'}]`;
-    });
-    onInput();
-  });
 
   on('doc:loaded', () => updateStats());
 }
@@ -410,8 +496,8 @@ export function insertQuote(annotation) {
   if (annotation.quote) parts.push(`> ${annotation.quote.replace(/\n+/g, ' ')}`);
   if (annotation.note) parts.push(annotation.note);
   parts.push(`*— p. ${annotation.page}*`);
-  const block = `\n\n${parts.join('\n\n')}\n`;
-  const at = editor.value.length;
-  replaceRange(at, at, block);
+  for (const node of markdownToNodes(parts.join('\n\n'))) editor.append(node);
+  placeCaretAtEnd(editor.lastElementChild);
+  onInput();
   toast('Added to the document');
 }

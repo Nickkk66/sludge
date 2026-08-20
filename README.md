@@ -74,9 +74,13 @@ It's a PDF app. Yes, basic. But:
 *Reading aloud on the left, the Markdown document on the right — editor above, live preview below.*
 
 **A document to write in**
-- A Markdown editor that lives beside the PDF, in the same notes file.
+- A document that formats as you type. `# ` makes a heading and the marker disappears,
+  `- [ ] ` becomes a real tick box you click. No preview button, no second copy of your
+  notes to read.
+- Markdown stays the storage format, so the sidecar file is still plain text you could
+  open anywhere. **Markdown** in the ribbon shows you exactly what's stored.
 - Type `/` for headings, lists, checkboxes, quotes, tables. `⌘B`/`⌘I` work as expected;
-  Enter continues lists; checkboxes tick from the preview.
+  Enter leaves a list when the item is empty.
 - Select any passage and hand it to the local model — improve, shorten, fix grammar,
   turn into bullets, or generate study questions.
 - Send any highlight straight into the document from the notes panel.
@@ -223,6 +227,12 @@ milliseconds over an 800-page book — no embedding model, no index server, no w
 | `⌘E` | Export notes |
 
 `⌘`-scroll zooms.
+
+## Tabs
+
+Documents open in tabs. Each owns its own annotations, extracted text, chapter list and
+reading position, so opening a second PDF never costs you your place in the first. **+**
+opens the start screen, and whatever you pick from there lands in a new tab.
 
 ## Filtering notes
 

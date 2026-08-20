@@ -17,7 +17,7 @@ import { initSpeech, speech, play as speechPlay, pause as speechPause, stop as s
          voicesAreBasic, refreshVoices, readingState, jumpToSentence, sentenceAtOffset,
          readFrom, offsetAtPoint, isReadingPage } from './speech.js';
 import { describeVoice } from './voices.js';
-import { initDocNotes, getMarkdown, setMarkdown, togglePreview, exportDocument } from './docnotes.js';
+import { initDocNotes, getMarkdown, setMarkdown, exportDocument } from './docnotes.js';
 import { initFocus, restoreFocus, openPicker } from './focus.js';
 import { initProfile, loadProfile, showOnboarding, renderGreeting, profile } from './profile.js';
 import { initScan, refreshScanStatus, setModels } from './scan.js';
