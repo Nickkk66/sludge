@@ -1,4 +1,4 @@
-import { $, el, escapeHtml, debounce } from './util.js';
+import { $, el, escapeHtml, debounce, setChildren } from './util.js';
 import { state, emit, on, COLORS } from './state.js';
 import { goToPage, scrollToSpot, refreshAnnotations, getPageEl, isRendered, renderPage } from './viewer.js';
 import { flattenTextLayer } from './textmap.js';
@@ -191,7 +191,7 @@ function renderSearchColorFilter() {
     row.replaceChildren();
     return;
   }
-  row.replaceChildren(
+  setChildren(row,
     el('span', { class: 'sc-label' }, 'only pages I highlighted:'),
     ...chips.map((c) => el('button', {
       class: `fchip${state.searchColorFilter.has(c.hex) ? ' on' : ''}`,

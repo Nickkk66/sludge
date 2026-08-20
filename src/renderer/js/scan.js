@@ -1,4 +1,4 @@
-import { $, el, escapeHtml, toast } from './util.js';
+import { $, el, escapeHtml, toast, setChildren } from './util.js';
 import { state, on, emit } from './state.js';
 import { describeModel } from './ai.js';
 
@@ -96,7 +96,7 @@ function renderOffer() {
   const est = (status && status.estimate) || { blocks: 0, seconds: 0 };
   const small = paramsOf(scanModel) < 6;
 
-  box.replaceChildren(
+  setChildren(box,
     el('div', { class: 'so-head' },
       el('span', {
         html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5.5h11a1.5 1.5 0 011.5 1.5v11a1.5 1.5 0 01-1.5 1.5H4z"/><path d="M7.5 9h6M7.5 12.5h4"/><circle cx="18" cy="7" r="3"/></svg>'
@@ -135,7 +135,7 @@ function renderProgress() {
     ? `${progress.chapter} (pp. ${progress.from}–${progress.to})`
     : `pages ${progress.from}–${progress.to}`;
 
-  box.replaceChildren(
+  setChildren(box,
     el('div', { class: 'so-head' }, el('b', {}, `Scanning — ${progress.done} of ${progress.total} sections`)),
     el('div', { class: 'so-bar' }, el('i', { style: { width: `${pct}%` } })),
     el('div', { class: 'so-status' },
@@ -150,7 +150,7 @@ function renderProgress() {
 function renderDone() {
   const box = $('#scanOffer');
   box.className = 'scan-offer done';
-  box.replaceChildren(el('div', { class: 'scan-chip' },
+  setChildren(box, el('div', { class: 'scan-chip' },
     el('b', {}, '✓ Scanned'),
     el('span', {}, `${status.blocks} sections · ${status.builtWith || 'local model'}`),
     el('button', {

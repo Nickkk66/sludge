@@ -17,6 +17,14 @@ export const el = (tag, props = {}, ...kids) => {
   return node;
 };
 
+/**
+ * Replace an element's children, dropping conditional blanks.
+ * `Node.replaceChildren(null)` inserts the literal text "null"; this doesn't.
+ */
+export const setChildren = (node, ...kids) => {
+  node.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false));
+};
+
 export const escapeHtml = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
