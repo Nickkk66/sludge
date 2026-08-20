@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld('api', {
 
   exportNotes: (defaultName, content) => call('export:save', defaultName, content),
 
+  questions: {
+    pick: () => call('questions:pick'),
+    read: (filePath) => call('questions:read', filePath)
+  },
+
   update: {
     check: () => call('update:check'),
     open: (url) => call('update:open', url),

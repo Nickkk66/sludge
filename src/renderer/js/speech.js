@@ -1,5 +1,5 @@
 import { $, el, toast } from './util.js';
-import { state, emit, on } from './state.js';
+import { state, emit, on, deadZonesOnPage } from './state.js';
 import { getPageEl, renderPage, goToPage, refreshAnnotations, viewerEl } from './viewer.js';
 import { flattenTextLayer, rectsFor, splitSentences } from './textmap.js';
 import { pickVoices, needsBetterVoices, allEnglish } from './voices.js';
@@ -74,6 +74,26 @@ function pickVoice() {
 
 /* ------------------------------------------------------------ page prep */
 
+/**
+ * A text node is skipped when its middle falls inside a dead zone — the reader
+ * has said that region is a figure or a caption, not something to read out.
+ */
+function makeSkipper(pageEl, pageNum) {
+  const zones = deadZonesOnPage(pageNum);
+  if (!zones.length) return null;
+  const pb = pageEl.getBoundingClientRect();
+  if (!pb.width || !pb.height) return null;
+
+  return (node) => {
+    const host = node.parentElement;
+    if (!host) return false;
+    const r = host.getBoundingClientRect();
+    const cx = (r.left + r.width / 2 - pb.left) / pb.width;
+    const cy = (r.top + r.height / 2 - pb.top) / pb.height;
+    return zones.some((z) => cx >= z.x && cx <= z.x + z.w && cy >= z.y && cy <= z.y + z.h);
+  };
+}
+
 async function preparePage(pageNum) {
   await renderPage(pageNum);
   // The text layer needs a frame before ranges measure correctly.
@@ -81,7 +101,7 @@ async function preparePage(pageNum) {
   const pageEl = getPageEl(pageNum);
   const layer = pageEl && pageEl.querySelector('.textLayer');
   if (!layer) return false;
-  mapped = flattenTextLayer(layer);
+  mapped = flattenTextLayer(layer, { skip: makeSkipper(pageEl, pageNum) });
   if (!mapped || !mapped.flat.trim()) return false;
   sentences = splitSentences(mapped.flat);
   readingPage = pageNum;
@@ -99,8 +119,9 @@ function ensureMapping() {
   if (mapped && mapped.nodes.length && mapped.nodes[0].isConnected) return true;
   const pageEl = getPageEl(readingPage);
   const layer = pageEl && pageEl.querySelector('.textLayer');
+  if (!pageEl) return false;
   if (!layer) return false;
-  const fresh = flattenTextLayer(layer);
+  const fresh = flattenTextLayer(layer, { skip: makeSkipper(pageEl, readingPage) });
   if (!fresh) return false;
   mapped = fresh;
   return true;

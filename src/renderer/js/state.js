@@ -100,11 +100,34 @@ export function makePin({ page, x, y, color, note = '', tags = [] }) {
   };
 }
 
+export function makeDeadZone({ page, x, y, w, h }) {
+  return {
+    id: uid(),
+    type: 'deadzone',
+    page,
+    x,
+    y,
+    w,
+    h,
+    note: '',
+    tags: [],
+    color: '#6b7280',
+    created: new Date().toISOString(),
+    updated: new Date().toISOString()
+  };
+}
+
 export const annotationsOnPage = (page) => state.annotations.filter((a) => a.page === page);
+
+/** Regions on a page the reader has marked as "skip this". */
+export const deadZonesOnPage = (page) =>
+  state.annotations.filter((a) => a.type === 'deadzone' && a.page === page);
+
+export const hasDeadZones = () => state.annotations.some((a) => a.type === 'deadzone');
 
 export function allTags() {
   const counts = new Map();
-  for (const a of state.annotations) {
+  for (const a of state.annotations.filter((x) => x.type !== 'deadzone')) {
     for (const t of a.tags || []) counts.set(t, (counts.get(t) || 0) + 1);
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
@@ -112,7 +135,9 @@ export function allTags() {
 
 export function usedColors() {
   const counts = new Map();
-  for (const a of state.annotations) counts.set(a.color, (counts.get(a.color) || 0) + 1);
+  for (const a of state.annotations.filter((x) => x.type !== 'deadzone')) {
+    counts.set(a.color, (counts.get(a.color) || 0) + 1);
+  }
   return [...counts.entries()];
 }
 
@@ -169,6 +194,7 @@ export function filteredAnnotations() {
   const empty = !q.tags.length && !q.text.length && !q.pages.length && !q.ranges.length && !q.loose.length;
   return state.annotations
     .filter((a) => {
+      if (a.type === 'deadzone') return false;
       if (state.colorFilter.size && !state.colorFilter.has(a.color)) return false;
       if (state.tagFilter.size && !(a.tags || []).some((t) => state.tagFilter.has(t))) return false;
       return empty ? true : matchesQuery(a, q);

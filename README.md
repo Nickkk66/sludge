@@ -19,6 +19,7 @@ It's a PDF app. Yes, basic. But:
 - **A chapter finder that actually works** — even when the PDF has no outline, it reads the book's own contents pages.
 - **A local AI that has read what you've read** — ask about the textbook, ask about *your own notes*, and it tells you which is which.
 - **Let it read the whole book once** — a one-off scan writes a summary of every section, so broad questions stop getting vague answers.
+- **Hand it your worksheet** — load a question sheet and every question gets answered from the PDF and your notes, with citations.
 - **Don't want to read?** It reads to you, highlighting each word as it goes.
 - **Night and day mode**, obviously — and it can invert the page itself.
 - **Brainrot mode.** A textbook can't hold your attention on its own, so there's Minecraft parkour and Subway Surfers running alongside it.
@@ -113,6 +114,24 @@ It's a PDF app. Yes, basic. But:
   them — that's not something prompt wording fixes at that size. The scan is a one-time
   background job, so it can afford the slower, better model; chat stays fast.
 
+**Dead zones**
+- Figures, captions, sidebars and answer keys derail both read-aloud and the AI. Draw a
+  box over one and it becomes a dead zone: read-aloud skips it, and it's stripped from the
+  text the AI and search see.
+- Marking a zone re-extracts that page and rewrites the cached text, so the region is
+  hidden everywhere at once rather than filtered in one place and not another.
+- `Dead Zone` in the Annotations tab, or `d`. Click a zone to remove it.
+
+**Question sheets**
+- Load a worksheet, study guide or review list — `.txt`, `.md`, `.rtf`, `.doc`, `.docx`
+  or `.pdf`, or just paste it — and each question is answered against the same evidence
+  the chat panel uses: the pages, your notes, and the scan summaries if you've run one.
+- Questions are pulled out of the file automatically. Numbered lists, lettered parts,
+  bullets and bare questions all work; headers like "Name:" and "Directions:" are ignored,
+  and a question wrapped across two lines is stitched back together.
+- Answers keep their page citations, so you can click straight to the source. Export the
+  whole sheet to Markdown when you're done.
+
 **Ask a local AI**
 - Ranks the document's pages *and* your own notes against your question, then answers from what it found.
 - It always distinguishes the two: *"your note on p. 112 says…"* versus a page citation `[p. 112]`.
@@ -187,7 +206,7 @@ milliseconds over an 800-page book — no embedding model, no index server, no w
 | `⌘1` `⌘2` `⌘3` `⌘4` `⌘5` | Pages · Chapters · Notes · Ask AI · Document |
 | `⌘R` | Read aloud (`space` to pause / resume) |
 | `⌘⇧S` / `⌘⇧F` | Split view / focus video |
-| `v` `h` `p` `r` | Select · Highlight · Pin · Read aloud |
+| `v` `h` `p` `d` `r` | Select · Highlight · Pin · Dead zone · Read aloud |
 | `←` `→` | Previous / next page |
 | `⌘+` `⌘-` `⌘0` | Zoom in · out · fit width |
 | `⌘D` | Day / night |
@@ -244,6 +263,8 @@ src/renderer/    the UI — plain ES modules, no framework, no build step
   js/ai.js         chat panel, streaming, citations, sources
   js/focus.js      the video strip and pack picker
   js/scan.js       the full-scan offer, progress, and state
+  js/questions.js  question-sheet parsing, batch answering, export
+  js/voices.js     narrowing 180 system voices down to four usable ones
 ```
 
 Highlight geometry is stored as fractions of the page box, so annotations stay put at

@@ -67,6 +67,7 @@ module.exports = function buildMenu(getWin) {
       submenu: [
         { label: 'Highlight Tool', accelerator: 'Cmd+H', click: send('tool:highlight') },
         { label: 'Pin Note Tool', accelerator: 'Cmd+P', click: send('tool:pin') },
+        { label: 'Dead Zone Tool', accelerator: 'Cmd+Shift+D', click: send('tool:deadzone') },
         { label: 'Select Tool', accelerator: 'Cmd+Escape', click: send('tool:select') }
       ]
     },

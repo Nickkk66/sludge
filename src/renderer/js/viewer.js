@@ -332,6 +332,54 @@ function applyToolToLayer(textEl) {
   textEl.classList.toggle('no-select', state.tool === 'hand' || state.tool === 'pin');
 }
 
+/**
+ * Re-read one page's text, dropping anything inside a dead zone, and patch it
+ * into the cached index. Retrieval, search and the scan all read from that
+ * cache, so masking it here hides the region from every one of them at once.
+ */
+export async function reextractPage(pageNum, zones = []) {
+  if (!state.pdf) return null;
+  try {
+    const page = await state.pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+
+    const kept = content.items.filter((item) => {
+      if (!zones.length) return true;
+      const tr = item.transform || [];
+      // Item origin is the text baseline in PDF space, y measured from the bottom.
+      const x = (tr[4] || 0) / viewport.width;
+      const yFromTop = 1 - ((tr[5] || 0) / viewport.height);
+      const cx = x + ((item.width || 0) / viewport.width) / 2;
+      const cy = yFromTop - ((item.height || 0) / viewport.height) / 2;
+      return !zones.some((z) => cx >= z.x && cx <= z.x + z.w && cy >= z.y && cy <= z.y + z.h);
+    });
+
+    const text = kept.map((it) => (it.str || '') + (it.hasEOL ? '\n' : '')).join('');
+    return text.replace(/[ \t]+/g, ' ').trim();
+  } catch {
+    return null;
+  }
+}
+
+/** Rebuild the cached text for every page that has dead zones on it. */
+export async function applyDeadZones(docId, zonesByPage) {
+  if (!state.pageText.length) return false;
+  let changed = false;
+  for (const [page, zones] of zonesByPage) {
+    const fresh = await reextractPage(page, zones);
+    if (fresh === null) continue;
+    const entry = state.pageText.find((p) => p && p.page === page);
+    if (!entry) continue;
+    if (entry.text !== fresh) {
+      entry.text = fresh;
+      changed = true;
+    }
+  }
+  if (changed) await window.api.index.save(docId, state.pageText).catch(() => {});
+  return changed;
+}
+
 /* ------------------------------------------------------------ text extraction */
 
 /**

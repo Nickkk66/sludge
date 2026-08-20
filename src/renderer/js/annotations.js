@@ -1,5 +1,5 @@
 import { $, el, escapeHtml, mergeLineRects, toast } from './util.js';
-import { state, emit, COLORS, makeHighlight, makePin, annotationsOnPage } from './state.js';
+import { state, emit, COLORS, makeHighlight, makePin, makeDeadZone, annotationsOnPage } from './state.js';
 
 let popupEl = null;
 let editorTarget = null;   // annotation currently open in the editor
@@ -29,6 +29,13 @@ export function paintAnnotations(pageNum, layer) {
         });
         layer.append(box);
       });
+    } else if (a.type === 'deadzone') {
+      layer.append(el('div', {
+        class: 'deadzone',
+        'data-id': a.id,
+        style: { left: `${a.x * 100}%`, top: `${a.y * 100}%`, width: `${a.w * 100}%`, height: `${a.h * 100}%` },
+        title: 'Dead zone — skipped when reading aloud and hidden from the AI'
+      }, el('span', { class: 'dz-tag' }, 'skipped')));
     } else if (a.type === 'pin') {
       const pin = el('div', {
         class: 'pin',
@@ -138,6 +145,16 @@ export function highlightSelection(color = state.color, { openEditor = null } = 
   return created[0] || null;
 }
 
+export function addDeadZone(pageNum, rect) {
+  // Ignore stray clicks; a zone needs to actually cover something.
+  if (rect.w < 0.02 || rect.h < 0.01) return null;
+  const zone = makeDeadZone({ page: pageNum, ...rect });
+  state.annotations.push(zone);
+  emit('annotations:changed', { added: [zone] });
+  emit('deadzones:changed', { page: pageNum });
+  return zone;
+}
+
 export function addPin(pageNum, x, y) {
   const anno = makePin({ page: pageNum, x, y });
   state.annotations.push(anno);
@@ -162,6 +179,7 @@ export function deleteAnnotation(id) {
   const [gone] = state.annotations.splice(i, 1);
   if (state.selectedAnnotation === id) state.selectedAnnotation = null;
   emit('annotations:changed', { removed: [gone] });
+  if (gone.type === 'deadzone') emit('deadzones:changed', { page: gone.page });
 }
 
 export function clearPage(pageNum) {
@@ -342,8 +360,64 @@ export function initAnnotationUi() {
     hovered = null;
   });
 
+  // Dragging out a dead zone.
+  let drawing = null;
+  let box = null;
+  $('#pages').addEventListener('mousedown', (e) => {
+    if (state.tool !== 'deadzone') return;
+    const pageEl = e.target.closest('.page');
+    if (!pageEl) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r = pageEl.getBoundingClientRect();
+    drawing = {
+      page: Number(pageEl.dataset.page),
+      pageEl,
+      x0: (e.clientX - r.left) / r.width,
+      y0: (e.clientY - r.top) / r.height
+    };
+    box = el('div', { class: 'deadzone drawing' });
+    const layer = pageEl.querySelector('.annoLayer');
+    if (layer) layer.append(box);
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!drawing || !box) return;
+    const r = drawing.pageEl.getBoundingClientRect();
+    const x1 = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    const y1 = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    const rect = normRect(drawing.x0, drawing.y0, x1, y1);
+    Object.assign(box.style, {
+      left: `${rect.x * 100}%`,
+      top: `${rect.y * 100}%`,
+      width: `${rect.w * 100}%`,
+      height: `${rect.h * 100}%`
+    });
+  });
+
+  window.addEventListener('mouseup', (e) => {
+    if (!drawing) return;
+    const r = drawing.pageEl.getBoundingClientRect();
+    const x1 = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    const y1 = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    const rect = normRect(drawing.x0, drawing.y0, x1, y1);
+    if (box) box.remove();
+    const made = addDeadZone(drawing.page, rect);
+    if (!made) toast('Drag a box over the area you want skipped.');
+    drawing = null;
+    box = null;
+  });
+
   // Clicks on the page: open an existing annotation, or drop a pin.
   $('#pages').addEventListener('mousedown', (e) => {
+    if (state.tool === 'deadzone') return;
+    const zone = e.target.closest('.deadzone');
+    if (zone && !zone.classList.contains('drawing')) {
+      e.preventDefault();
+      e.stopPropagation();
+      showDeadZoneMenu(zone, e.clientX, e.clientY);
+      return;
+    }
     const hit = e.target.closest('.hl, .pin');
     if (hit) {
       e.preventDefault();
@@ -389,5 +463,34 @@ export function initAnnotationUi() {
     }
   });
 }
+
+/** Small menu on a dead zone: the only thing to do with one is remove it. */
+function showDeadZoneMenu(node, x, y) {
+  document.querySelectorAll('.ctx-menu').forEach((n) => n.remove());
+  const id = node.dataset.id;
+  const menu = el('div', { class: 'ctx-menu' },
+    el('div', { class: 'ctx-head' }, 'Dead zone — skipped when reading, hidden from the AI'),
+    el('button', {
+      class: 'ctx-item',
+      onclick: () => { deleteAnnotation(id); menu.remove(); toast('Dead zone removed'); }
+    }, el('span', { class: 'ctx-check' }, ''), 'Remove this dead zone')
+  );
+  document.body.append(menu);
+  menu.style.left = `${Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, x))}px`;
+  menu.style.top = `${Math.max(8, Math.min(window.innerHeight - menu.offsetHeight - 8, y))}px`;
+  const close = (ev) => {
+    if (menu.contains(ev.target)) return;
+    menu.remove();
+    document.removeEventListener('mousedown', close);
+  };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
+const normRect = (x0, y0, x1, y1) => ({
+  x: Math.min(x0, x1),
+  y: Math.min(y0, y1),
+  w: Math.abs(x1 - x0),
+  h: Math.abs(y1 - y0)
+});
 
 export const currentEditorTarget = () => editorTarget;

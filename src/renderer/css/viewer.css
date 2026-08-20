@@ -324,10 +324,15 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
 .tp-grip:hover .tp-grip-dots { background: var(--fg-3); }
 
 .tp-line {
-  font-size: 19px; line-height: 1.55; color: var(--fg-2);
+  font-size: 19px; line-height: 1.6; color: var(--fg-2);
   text-align: center; user-select: text;
-  max-height: 132px; overflow: hidden;
+  /* A long sentence scrolls inside the panel; the word being spoken is kept
+     vertically centred, so the read position never drifts out of view. */
+  height: 4.8em; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
 }
+.tp-scroll { width: 100%; transition: transform .22s ease-out; }
 .tp-line .w { transition: color .08s, background .08s; border-radius: 4px; padding: 0 1px; }
 .tp-line .w.said { color: var(--fg-3); }
 .tp-line .w.now {
@@ -356,3 +361,27 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
   pointer-events: none;
   transition: all .12s ease-out;
 }
+
+/* ---------- dead zones ---------- */
+.annoLayer .deadzone {
+  position: absolute;
+  border: 1.5px dashed rgba(150, 158, 172, .85);
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(120, 128, 142, .16) 0 7px,
+    rgba(120, 128, 142, .05) 7px 14px
+  );
+  pointer-events: auto;
+  cursor: pointer;
+}
+.annoLayer .deadzone.drawing { pointer-events: none; border-color: var(--accent); }
+.annoLayer .deadzone:hover { border-color: var(--accent); }
+.dz-tag {
+  position: absolute; top: 3px; left: 5px;
+  font-size: 9.5px; letter-spacing: .4px; text-transform: uppercase;
+  color: #6b7280; background: rgba(255,255,255,.82);
+  padding: 1px 5px; border-radius: 3px;
+}
+#viewerWrap.tool-deadzone .page { cursor: crosshair; }
+#viewerWrap.tool-deadzone .textLayer { user-select: none; pointer-events: none; }

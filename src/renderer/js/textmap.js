@@ -7,11 +7,18 @@
  * page" back to a real DOM Range they can measure — this does that mapping.
  */
 
-/** Collapse a text layer into one normalized string plus a position map. */
-export function flattenTextLayer(layer) {
+/**
+ * Collapse a text layer into one normalized string plus a position map.
+ * `skip` receives each text node and returns true to leave it out — used to
+ * drop text inside dead zones so it is never read aloud.
+ */
+export function flattenTextLayer(layer, { skip = null } = {}) {
   const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
   const nodes = [];
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (skip && skip(node)) continue;
+    nodes.push(node);
+  }
   if (!nodes.length) return null;
 
   let flat = '';

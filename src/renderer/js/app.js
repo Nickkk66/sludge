@@ -2,7 +2,7 @@ import { $, $$, el, debounce, toast, fmtSize, escapeHtml } from './util.js';
 import { state, on, emit, COLORS } from './state.js';
 import {
   initViewer, loadDocument, buildTextIndex, goToPage, setZoom, stepZoom,
-  applyTool, refreshAnnotations, restorePosition, getPosition, destroy
+  applyTool, refreshAnnotations, restorePosition, getPosition, destroy, applyDeadZones
 } from './viewer.js';
 import { initAnnotationUi, clearPage, closeNoteEditor, hideSelectionPopup } from './annotations.js';
 import { initNotesPanel, renderNotesPanel } from './notes.js';
@@ -20,6 +20,7 @@ import { initDocNotes, getMarkdown, setMarkdown, togglePreview, exportDocument }
 import { initFocus, restoreFocus, openPicker } from './focus.js';
 import { initProfile, loadProfile, showOnboarding, renderGreeting, profile } from './profile.js';
 import { initScan, refreshScanStatus, setModels } from './scan.js';
+import { initQuestions } from './questions.js';
 
 /* ------------------------------------------------------------ boot */
 
@@ -43,6 +44,7 @@ async function boot() {
   initFocus();
   initProfile();
   initScan();
+  initQuestions();
   wireSpeechBar();
   wireTeleprompter();
   wireDocument();
@@ -232,6 +234,29 @@ on('annotations:changed', () => {
   renderNotesPanel();
   scheduleSave();
 });
+
+// A dead zone changes what the AI and search can see, so the cached page text
+// is rebuilt for the pages involved.
+const syncDeadZones = debounce(async () => {
+  if (!state.docId || !state.indexReady) return;
+  const byPage = new Map();
+  for (const a of state.annotations) {
+    if (a.type !== 'deadzone') continue;
+    if (!byPage.has(a.page)) byPage.set(a.page, []);
+    byPage.get(a.page).push(a);
+  }
+  // Pages that just lost their last zone need rebuilding too.
+  for (const page of touchedDeadZonePages) if (!byPage.has(page)) byPage.set(page, []);
+  if (!byPage.size) return;
+  const changed = await applyDeadZones(state.docId, byPage);
+  if (changed) toast('Dead zones applied — the AI and search now skip those areas.');
+}, 700);
+
+const touchedDeadZonePages = new Set();
+on('deadzones:changed', ({ page }) => {
+  touchedDeadZonePages.add(page);
+  syncDeadZones();
+});
 on('scroll:idle', () => scheduleSave());
 on('document:changed', () => scheduleSave());
 window.addEventListener('beforeunload', () => { if (state.filePath) saveNow(); });
@@ -259,6 +284,7 @@ function setTool(tool) {
   state.tool = tool;
   $$('.rb[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
   $('#colorbar').hidden = !(tool === 'highlight' || tool === 'pin');
+  if (tool === 'deadzone') toast('Drag a box over anything that should be skipped.');
   applyTool();
   if (tool !== 'select') hideSelectionPopup();
 }
@@ -299,6 +325,7 @@ function syncRibbonState() {
   set('#btnNotesPanel, #btnNotesPanel2', right === 'notes');
   set('#btnAsk, #btnAsk2', right === 'ai');
   set('#btnDoc', right === 'document');
+  set('#btnQuestions', right === 'questions');
 }
 
 function renderSideNotesSummary() {
@@ -433,6 +460,15 @@ function wireChrome() {
 
   ['#btnExport', '#btnExport2'].forEach((s) => $(s).addEventListener('click', exportNotes));
   $('#btnClearPage').addEventListener('click', () => state.pdf && clearPage(state.currentPage));
+  $('#btnClearZones').addEventListener('click', () => {
+    const zones = state.annotations.filter((a) => a.type === 'deadzone');
+    if (!zones.length) return toast('No dead zones to clear.');
+    const pages = [...new Set(zones.map((z) => z.page))];
+    state.annotations = state.annotations.filter((a) => a.type !== 'deadzone');
+    emit('annotations:changed', { removed: zones });
+    for (const page of pages) emit('deadzones:changed', { page });
+    toast(`Cleared ${zones.length} dead zone${zones.length === 1 ? '' : 's'}.`);
+  });
   $('#btnRevealSidecar').addEventListener('click', async () => {
     if (!state.filePath) return toast('Open a PDF first.');
     const p = await window.api.revealSidecar(state.filePath, state.docId);
@@ -668,16 +704,54 @@ function renderTeleprompterLine(text) {
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push(document.createTextNode(text.slice(last)));
-  line.replaceChildren(...parts);
+  const scroll = el('div', { class: 'tp-scroll' }, ...parts);
+  line.replaceChildren(scroll);
+  tpOffset = 0;
+  centreTeleprompter(null);
+}
+
+/**
+ * Slide the sentence so the word being spoken sits on the panel's centre line.
+ * Adjusts relative to the current offset, which avoids having to reason about
+ * how flexbox has already positioned the block.
+ */
+let tpOffset = 0;
+
+function centreTeleprompter(word) {
+  const line = $('#tpLine');
+  const scroll = line.querySelector('.tp-scroll');
+  if (!scroll) return;
+
+  if (!word) {
+    tpOffset = 0;
+    scroll.style.transform = '';
+    return;
+  }
+
+  const lineBox = line.getBoundingClientRect();
+  const wordBox = word.getBoundingClientRect();
+  if (!lineBox.height || !wordBox.height) return;
+
+  const lineCentre = lineBox.top + lineBox.height / 2;
+  const wordCentre = wordBox.top + wordBox.height / 2;
+  const delta = lineCentre - wordCentre;
+  if (Math.abs(delta) < 1) return;
+
+  tpOffset += delta;
+  scroll.style.transform = `translateY(${Math.round(tpOffset)}px)`;
 }
 
 function markTeleprompterWord(start, end) {
+  let current = null;
   for (const w of $$('#tpLine .w')) {
     const at = Number(w.dataset.at);
     const wEnd = Number(w.dataset.end);
-    w.classList.toggle('now', at < end && wEnd > start);
+    const now = at < end && wEnd > start;
+    w.classList.toggle('now', now);
     w.classList.toggle('said', wEnd <= start);
+    if (now && !current) current = w;
   }
+  if (current) centreTeleprompter(current);
 }
 
 /* The six places it can land. Bottom is home. */
@@ -807,6 +881,7 @@ function wireTeleprompter() {
 
 function wireDocument() {
   $('#btnDoc').addEventListener('click', () => toggleRightPanel('document'));
+  $('#btnQuestions').addEventListener('click', () => toggleRightPanel('questions'));
   $('#btnDocSnap').addEventListener('click', toggleSplit);
   $('#rightSnap').addEventListener('click', toggleSplit);
 }
@@ -844,6 +919,7 @@ function wireKeyboard() {
       case 'v': setTool('select'); break;
       case 'h': if (!e.metaKey) setTool('highlight'); break;
       case 'p': if (!e.metaKey) setTool('pin'); break;
+      case 'd': if (!e.metaKey) setTool('deadzone'); break;
       case 'r': if (!e.metaKey) { $('#btnRead').click(); } break;
       case ' ':
         e.preventDefault();
@@ -886,7 +962,8 @@ function handleMenu(action) {
     focus: openPicker,
     'tool:highlight': () => setTool('highlight'),
     'tool:pin': () => setTool('pin'),
-    'tool:select': () => setTool('select')
+    'tool:select': () => setTool('select'),
+    'tool:deadzone': () => setTool('deadzone')
   };
   const fn = map[action];
   if (fn) fn();

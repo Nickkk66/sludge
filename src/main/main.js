@@ -193,6 +193,52 @@ handle('settings:set', async (patch) => store.saveSettings(patch));
 handle('index:get', async (docId) => store.getTextIndex(docId));
 handle('index:save', async (docId, pages) => store.saveTextIndex(docId, pages));
 
+/* -------------------------------------------------------- question sheets */
+
+const { execFile } = require('child_process');
+
+/** Convert a Word/RTF/Pages-exported file to plain text using macOS's own tool. */
+function textutilToText(filePath) {
+  return new Promise((resolve, reject) => {
+    execFile('/usr/bin/textutil', ['-convert', 'txt', '-stdout', filePath], { maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)));
+  });
+}
+
+handle('questions:pick', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Open a question sheet',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Documents', extensions: ['txt', 'md', 'markdown', 'rtf', 'doc', 'docx', 'pdf'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  });
+  if (res.canceled || !res.filePaths.length) return null;
+  return res.filePaths[0];
+});
+
+handle('questions:read', async (filePath) => {
+  const ext = path.extname(filePath).toLowerCase();
+  const name = path.basename(filePath);
+
+  if (ext === '.pdf') {
+    // Hand the bytes back; the renderer already has pdf.js loaded to read them.
+    const bytes = await fsp.readFile(filePath);
+    return { name, kind: 'pdf', bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+  }
+
+  if (['.doc', '.docx', '.rtf'].includes(ext)) {
+    try {
+      return { name, kind: 'text', text: await textutilToText(filePath) };
+    } catch (err) {
+      throw new Error(`Could not read ${name}: ${err.message}`);
+    }
+  }
+
+  return { name, kind: 'text', text: await fsp.readFile(filePath, 'utf8') };
+});
+
 handle('export:save', async (defaultName, content) => {
   const res = await dialog.showSaveDialog(win, {
     title: 'Export notes',
@@ -374,3 +420,103 @@ ipcMain.on('ai:stop', (_e, streamId) => {
   const ctrl = activeStreams.get(streamId);
   if (ctrl) ctrl.abort();
 });
+
+/* ---- TEMP SELFTEST ---- */
+if (process.argv.includes('--selftest')) {
+  app.whenReady().then(() => {
+    setTimeout(async () => {
+      try {
+        const r = await win.webContents.executeJavaScript(`(async () => {
+          const wait = (ms) => new Promise(r => setTimeout(r, ms));
+          const st = (await import('./js/state.js'));
+          const state = st.state;
+          const anno = await import('./js/annotations.js');
+          const viewer = await import('./js/viewer.js');
+          const out = {};
+
+          // --- dead zone over the top third of page 1
+          await viewer.renderPage(1);
+          await wait(700);
+          const before = state.pageText.find(p => p.page === 1).text;
+          out.textBefore = before.slice(0, 60);
+          out.lenBefore = before.length;
+
+          const zone = anno.addDeadZone(1, { x: 0.05, y: 0.02, w: 0.9, h: 0.30 });
+          out.zoneMade = !!zone;
+          await wait(300);
+          out.zoneDrawn = document.querySelectorAll('#page-1 .annoLayer .deadzone').length;
+
+          // index gets rebuilt without the masked region
+          await viewer.applyDeadZones(state.docId, new Map([[1, [zone]]]));
+          const after = state.pageText.find(p => p.page === 1).text;
+          out.lenAfter = after.length;
+          out.textAfter = after.slice(0, 60);
+          out.maskedOut = out.lenAfter < out.lenBefore;
+
+          // read-aloud should not speak the masked text
+          const sp = await import('./js/speech.js');
+          const spoken = [];
+          window.speechSynthesis.speak = (u) => { spoken.push(u.text); };
+          window.speechSynthesis.cancel = () => {};
+          await sp.play(1);
+          await wait(900);
+          out.firstSpoken = (spoken[0] || '').slice(0, 70);
+          out.speaksMaskedTitle = (spoken[0] || '').includes('A New Nation');
+          sp.stop();
+
+          // dead zones stay out of the notes panel
+          out.noteCards = document.querySelectorAll('#notesList .note-card').length;
+
+          // --- question sheet
+          const qs = await import('./js/questions.js');
+          out.parsed = qs.parseQuestions('1. What is X?\\n2. Explain Y.\\nRandom Title Line\\nWhy does Z happen?').map(q => q.text);
+          document.querySelector('#btnQuestions').click();
+          await wait(400);
+          out.questionsTabActive = document.querySelector('#rightPanel .rt[data-right=questions]').classList.contains('active');
+          out.questionsEmptyState = !!document.querySelector('#questionsView .qs-empty h3');
+          out.errors = window.__errs || [];
+          return out;
+        })()`);
+        console.log('SELFTEST ' + JSON.stringify(r, null, 1));
+      } catch (e) { console.log('SELFTEST FAILED ' + e.message); }
+      app.quit();
+    }, 14000);
+  });
+}
+
+/* ---- TEMP SELFTEST ---- */
+if (process.argv.includes('--selftest')) {
+  app.whenReady().then(() => {
+    setTimeout(async () => {
+      try {
+        const r = await win.webContents.executeJavaScript(`(async () => {
+          const wait = (ms) => new Promise(r => setTimeout(r, ms));
+          const qs = await import('./js/questions.js');
+          const out = {};
+          document.querySelector('#btnQuestions').click();
+          await wait(400);
+          await qs.__testIngest('/tmp/claude-501/-Users-nicholasgaston-Documents-PDF-Tool/556d1002-3042-418f-9f5e-df85651e0f41/scratchpad/decl-questions.txt');
+          await wait(600);
+          out.rows = document.querySelectorAll('#questionsView .qs-item').length;
+          const answerBtn = [...document.querySelectorAll('.qs-buttons button')].find(b => /Answer/.test(b.textContent));
+          out.hasAnswerBtn = !!answerBtn;
+          if (answerBtn) answerBtn.click();
+          for (let i = 0; i < 150; i++) {
+            await wait(1000);
+            if (document.querySelectorAll('#questionsView .qs-item.done').length >= 3) break;
+          }
+          out.done = document.querySelectorAll('#questionsView .qs-item.done').length;
+          out.answers = [...document.querySelectorAll('#questionsView .qs-item')].map(n => ({
+            q: n.querySelector('.qs-text').textContent.slice(0, 50),
+            a: (n.querySelector('.qs-a') || {}).textContent ? n.querySelector('.qs-a').textContent.replace(/\\s+/g,' ').slice(0, 180) : null,
+            src: (n.querySelector('.qs-src') || {}).textContent || null
+          }));
+          out.errors = window.__errs || [];
+          return out;
+        })()`);
+        console.log('SELFTEST ' + JSON.stringify(r, null, 1));
+      } catch (e) { console.log('SELFTEST FAILED ' + e.message); }
+      app.quit();
+    }, 12000);
+  });
+}
