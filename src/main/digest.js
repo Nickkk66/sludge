@@ -162,11 +162,17 @@ function parseReply(text) {
  * Run the scan. `onProgress` fires per block; the returned promise resolves with
  * the finished digest, or with whatever completed before a cancel.
  */
-async function build({ docId, model, pages, chapters, docName }, onProgress) {
+async function build({ docId, model, pages, chapters, docName, limit = null }, onProgress) {
   if (running.has(docId)) throw new Error('A scan is already running for this document.');
 
   const blocks = planBlocks(pages, chapters);
   if (!blocks.length) throw new Error('No readable text to scan.');
+
+  // Resume rather than redo: anything already summarised is kept.
+  const existing = await load(docId);
+  const doneKeys = new Set((existing && existing.blocks || []).map((b) => `${b.from}-${b.to}`));
+  const todo = blocks.filter((b) => !doneKeys.has(`${b.from}-${b.to}`));
+  const batch = limit ? todo.slice(0, limit) : todo;
 
   const ctrl = new AbortController();
   running.set(docId, ctrl);
@@ -177,7 +183,8 @@ async function build({ docId, model, pages, chapters, docName }, onProgress) {
     model,
     built: new Date().toISOString(),
     complete: false,
-    blocks: []
+    blocks: [...((existing && existing.blocks) || [])],
+    plannedBlocks: blocks.length
   };
 
   const startedAt = Date.now();
@@ -185,9 +192,9 @@ async function build({ docId, model, pages, chapters, docName }, onProgress) {
     // Keep the model resident; reloading it per block would dominate the runtime.
     await ollama.warm(model);
 
-    for (let i = 0; i < blocks.length; i++) {
+    for (let i = 0; i < batch.length; i++) {
       if (ctrl.signal.aborted) break;
-      const b = blocks[i];
+      const b = batch[i];
       let parsed = { summary: '', terms: [] };
       try {
         const reply = await ollama.summarise({
@@ -216,21 +223,25 @@ async function build({ docId, model, pages, chapters, docName }, onProgress) {
       const elapsed = Date.now() - startedAt;
       if (onProgress) {
         onProgress({
-          done,
+          done: out.blocks.length,
           total: blocks.length,
+          batchDone: done,
+          batchTotal: batch.length,
           from: b.from,
           to: b.to,
           chapter: b.chapter || null,
-          etaMs: done ? Math.round((elapsed / done) * (blocks.length - done)) : null
+          etaMs: done ? Math.round((elapsed / done) * (batch.length - done)) : null
         });
       }
       // Persist as we go so a crash or a quit doesn't lose the work.
       if (done % 10 === 0) await save(docId, out).catch(() => {});
     }
 
-    out.complete = !ctrl.signal.aborted;
+    // "Complete" means every planned section has a summary, not just that this
+    // batch finished — a half scan is a legitimate resting point.
+    out.complete = !ctrl.signal.aborted && out.blocks.length >= blocks.length;
     out.blockCount = out.blocks.length;
-    out.plannedBlocks = blocks.length;
+    out.remaining = Math.max(0, blocks.length - out.blocks.length);
     await save(docId, out);
     return out;
   } finally {

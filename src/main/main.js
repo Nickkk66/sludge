@@ -332,10 +332,12 @@ handle('ai:retrieve', async ({ query, docId, annotations, currentPage }) => {
 handle('scan:status', async ({ docId, pages, chapters, params }) => {
   const existing = await digest.load(docId);
   const est = digest.estimate(pages || [], chapters || [], params);
+  const done = existing ? existing.blocks.length : 0;
   return {
     scanned: !!(existing && existing.complete),
-    partial: !!(existing && !existing.complete && existing.blocks.length),
-    blocks: existing ? existing.blocks.length : 0,
+    partial: !!(existing && !existing.complete && done > 0),
+    blocks: done,
+    remaining: Math.max(0, est.blocks - done),
     builtWith: existing ? existing.model : null,
     built: existing ? existing.built : null,
     running: digest.isRunning(docId),
@@ -345,16 +347,21 @@ handle('scan:status', async ({ docId, pages, chapters, params }) => {
 
 handle('scan:clear', async (docId) => digest.remove(docId));
 
-ipcMain.on('scan:start', async (event, { docId, model, docName, pages, chapters }) => {
+ipcMain.on('scan:start', async (event, { docId, model, docName, pages, chapters, limit }) => {
   const send = (channel, payload) => {
     if (!event.sender.isDestroyed()) event.sender.send(channel, { docId, ...payload });
   };
   try {
     const result = await digest.build(
-      { docId, model, docName, pages: pages || [], chapters: chapters || [] },
+      { docId, model, docName, pages: pages || [], chapters: chapters || [], limit },
       (p) => send('scan:progress', p)
     );
-    send('scan:done', { ok: true, complete: result.complete, blocks: result.blocks.length });
+    send('scan:done', {
+      ok: true,
+      complete: result.complete,
+      blocks: result.blocks.length,
+      remaining: result.remaining || 0
+    });
   } catch (err) {
     send('scan:done', { ok: false, error: String((err && err.message) || err) });
   }

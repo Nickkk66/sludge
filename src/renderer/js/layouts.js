@@ -22,7 +22,7 @@ export const BUILT_IN = [
     hint: 'Video left · big captions centre · document right',
     layout: {
       video: { on: true, dock: 'left', width: 420 },
-      teleprompter: { on: true, spot: 'bottom', size: 34 },
+      teleprompter: { on: true, spot: 'centre', size: 34 },
       right: { open: true, view: 'document', wide: true },
       left: { open: false, view: 'thumbnails' }
     }

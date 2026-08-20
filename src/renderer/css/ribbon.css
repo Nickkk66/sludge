@@ -123,3 +123,13 @@
   color: #e2584d; font-size: 11px;
 }
 .sp-warn:hover { background: rgba(226,88,77,.25); }
+
+.sp-zone {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 14px;
+  background: var(--bg); border: 1px solid var(--line);
+  color: var(--fg-2); font-size: 11.5px;
+}
+.sp-zone svg { width: 14px; height: 14px; }
+.sp-zone:hover { border-color: var(--accent); color: var(--fg); }
+.sp-zone.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }

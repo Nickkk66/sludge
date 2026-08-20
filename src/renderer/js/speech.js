@@ -351,6 +351,109 @@ export function skip(delta) {
   else paintReading(sentences[index], 0, 0);
 }
 
+/**
+ * Start reading from a specific sentence on the page currently being read.
+ * Used by clicks on the caption panel and on the page itself.
+ */
+export function jumpToSentence(i, { keepPlaying = true } = {}) {
+  if (!sentences.length) return false;
+  const next = Math.max(0, Math.min(sentences.length - 1, i));
+  index = next;
+  spokenWords = 0;
+  pageStartedAt = Date.now();
+  stopping = true;
+  synth.cancel();
+  stopping = false;
+  if (keepPlaying && speech.playing) speakCurrent();
+  else {
+    wordAt = [0, 0];
+    paintReading(sentences[index], 0, 0);
+    emit('speech:sentence', {
+      text: sentences[index].text,
+      index,
+      total: sentences.length,
+      page: readingPage,
+      remainingMs: estimateRemaining(sentences[index], 0)
+    });
+  }
+  return true;
+}
+
+/** The sentence containing a character offset in the page's flattened text. */
+export function sentenceAtOffset(offset) {
+  for (let i = 0; i < sentences.length; i++) {
+    if (offset >= sentences[i].start && offset <= sentences[i].end) return i;
+  }
+  // Between sentences: take the next one that starts after this point.
+  for (let i = 0; i < sentences.length; i++) if (sentences[i].start >= offset) return i;
+  return -1;
+}
+
+/**
+ * Begin reading a page at the point the reader clicked or selected. Prepares
+ * the page first if the voice is somewhere else entirely.
+ */
+export async function readFrom(pageNum, offset, { play: shouldPlay = true } = {}) {
+  if (!state.pdf) return false;
+  if (readingPage !== pageNum || !sentences.length) {
+    const ok = await preparePage(pageNum);
+    if (!ok) {
+      toast(`No readable text on page ${pageNum}.`);
+      return false;
+    }
+  }
+  const i = offset === null || offset === undefined ? 0 : sentenceAtOffset(offset);
+  if (i < 0) return false;
+
+  if (shouldPlay && !speech.playing) {
+    index = i;
+    spokenWords = 0;
+    pageStartedAt = Date.now();
+    speech.playing = true;
+    speech.paused = false;
+    emit('speech:changed');
+    speakCurrent();
+    return true;
+  }
+  return jumpToSentence(i);
+}
+
+/** Map a click inside a rendered page to an offset in its flattened text. */
+export function offsetAtPoint(pageNum, clientX, clientY) {
+  const pageEl = getPageEl(pageNum);
+  if (!pageEl) return null;
+  if (readingPage !== pageNum || !mapped) return null;
+  if (!ensureMapping()) return null;
+
+  let best = null;
+  let bestDist = Infinity;
+  for (let i = 0; i < mapped.map.length; i++) {
+    const slot = mapped.map[i];
+    const host = slot.node.parentElement;
+    if (!host) continue;
+    const r = host.getBoundingClientRect();
+    // Distance to the span's box, zero when the click is inside it.
+    const dx = clientX < r.left ? r.left - clientX : (clientX > r.right ? clientX - r.right : 0);
+    const dy = clientY < r.top ? r.top - clientY : (clientY > r.bottom ? clientY - r.bottom : 0);
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) { bestDist = d; best = i; }
+    if (d === 0) break;
+  }
+  return best;
+}
+
+/** The offset of a DOM node/offset pair, for turning a selection into a start point. */
+export function offsetOfNode(node, nodeOffset) {
+  if (!mapped) return null;
+  for (let i = 0; i < mapped.map.length; i++) {
+    const slot = mapped.map[i];
+    if (slot.node === node && slot.offset >= nodeOffset) return i;
+  }
+  return null;
+}
+
+export const isReadingPage = (pageNum) => readingPage === pageNum && sentences.length > 0;
+
 export function setRate(rate) {
   speech.rate = Math.max(0.5, Math.min(3, Number(rate) || 1));
   window.api.settings.set({ speechRate: speech.rate }).catch(() => {});
@@ -413,5 +516,6 @@ export const readingState = () => ({
   page: readingPage,
   sentence: index,
   total: sentences.length,
-  text: sentences[index] ? sentences[index].text : ''
+  text: sentences[index] ? sentences[index].text : '',
+  startOffset: sentences[index] ? sentences[index].start : 0
 });

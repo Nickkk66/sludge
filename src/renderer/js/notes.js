@@ -1,4 +1,4 @@
-import { $, el, escapeHtml } from './util.js';
+import { $, el, escapeHtml, confirmAction } from './util.js';
 import { state, emit, on, COLORS, filteredAnnotations, allTags, usedColors } from './state.js';
 import { openNoteEditor, deleteAnnotation, flashAnnotation, setAnnotationHover } from './annotations.js';
 import { scrollToSpot, refreshAnnotations } from './viewer.js';
@@ -67,7 +67,15 @@ function noteCard(a) {
     el('button', {
       title: 'Delete',
       html: '<svg viewBox="0 0 24 24"><path d="M6 7h12M9.5 7V5.5h5V7M7.5 7l.8 12.5h7.4L16.5 7"/></svg>',
-      onclick: (e) => { e.stopPropagation(); deleteAnnotation(a.id); }
+      onclick: async (e) => {
+        e.stopPropagation();
+        const ok = await confirmAction({
+          message: 'Delete this note?',
+          detail: a.note ? `“${a.note.slice(0, 90)}${a.note.length > 90 ? '…' : ''}”` : 'This highlight has no note on it.',
+          confirmLabel: 'Delete'
+        });
+        if (ok) deleteAnnotation(a.id);
+      }
     })
   );
   head.append(actions);

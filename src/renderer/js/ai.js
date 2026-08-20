@@ -98,9 +98,30 @@ function warmModel(model) {
 
 /* ---------------- asking ---------------- */
 
+let passage = null;
+
+/** Show the selected passage as pinned context above the composer. */
+export function setPassage(text) {
+  passage = text ? String(text).replace(/\s+/g, ' ').trim() : null;
+  const box = $('#aiPassage');
+  if (!box) return;
+  box.hidden = !passage;
+  if (passage) {
+    $('#aiPassageText').textContent = passage.length > 220 ? `${passage.slice(0, 220)}…` : passage;
+    $('#aiInput').placeholder = 'What do you want to know about it?';
+  } else {
+    $('#aiInput').placeholder = 'Ask about the PDF or your notes…';
+  }
+}
+
 export async function ask(question) {
-  const q = String(question || '').trim();
+  let q = String(question || '').trim();
+  if (!q && passage) return toast('Type what you want to know about the passage.');
   if (!q) return;
+  // A pinned passage rides along with whatever the reader actually asked.
+  if (passage) {
+    q = `About this passage from the document:\n"${passage.slice(0, 900)}"\n\nMy question: ${q}`;
+  }
   if (!state.pdf) return toast('Open a PDF first.');
   if (state.aiRunning) return;
   if (!state.aiModel) {
@@ -112,10 +133,14 @@ export async function ask(question) {
   const intro = thread.querySelector('.ai-intro');
   if (intro) intro.remove();
 
-  thread.append(el('div', { class: 'msg user' },
+  const shown = passage ? String(question).trim() : q;
+  const userMsg = el('div', { class: 'msg user' },
     el('div', { class: 'who' }, 'You'),
-    el('div', { class: 'bubble' }, q)
-  ));
+    passage ? el('div', { class: 'msg-passage' }, `“${passage.slice(0, 160)}${passage.length > 160 ? '…' : ''}”`) : null,
+    el('div', { class: 'bubble' }, shown)
+  );
+  thread.append(userMsg);
+  setPassage(null);
 
   const aiMsg = el('div', { class: 'msg ai' }, el('div', { class: 'who' }, state.aiModel));
   const thinking = el('div', { class: 'ai-thinking' }, el('i', { class: 'spin' }), 'searching the document and your notes…');
@@ -290,12 +315,16 @@ export function initAi() {
     activeBubble = null;
   });
 
-  // "Ask" from the text-selection popup.
+  // "Ask" from the text-selection popup. The passage becomes context shown
+  // above the composer; sending it without a question of your own only ever
+  // produced a generic summary nobody asked for.
   on('ai:askAbout', (text) => {
     emit('panel:right', 'ai');
-    const q = `About this passage: "${text.slice(0, 400)}" — explain it and connect it to my notes.`;
-    setTimeout(() => ask(q), 120);
+    setPassage(text);
+    setTimeout(() => $('#aiInput').focus(), 140);
   });
+
+  $('#aiPassageClear').addEventListener('click', () => setPassage(null));
 }
 
 export function resetAiThread() {

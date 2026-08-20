@@ -57,6 +57,38 @@ export function throttle(fn, ms = 100) {
   };
 }
 
+/**
+ * A small in-app confirm. Native dialogs steal focus and feel heavier than a
+ * note deletion deserves.
+ */
+export function confirmAction({ message, detail = '', confirmLabel = 'Delete', danger = true }) {
+  return new Promise((resolve) => {
+    document.querySelectorAll('.confirm-sheet').forEach((n) => n.remove());
+    const done = (answer) => {
+      wrap.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(answer);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); done(false); }
+      if (e.key === 'Enter') { e.preventDefault(); done(true); }
+    };
+
+    const card = el('div', { class: 'confirm-card' },
+      el('b', {}, message),
+      detail ? el('p', {}, detail) : null,
+      el('div', { class: 'confirm-actions' },
+        el('button', { onclick: () => done(false) }, 'Cancel'),
+        el('button', { class: danger ? 'danger' : 'primary', onclick: () => done(true) }, confirmLabel)
+      )
+    );
+    const wrap = el('div', { class: 'confirm-sheet', onclick: (e) => { if (e.target === wrap) done(false); } }, card);
+    document.body.append(wrap);
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => card.querySelector('button:last-child').focus(), 30);
+  });
+}
+
 let toastTimer;
 export function toast(message, ms = 2600) {
   const node = $('#toast');

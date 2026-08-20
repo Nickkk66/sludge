@@ -1,4 +1,4 @@
-import { $, el, escapeHtml, mergeLineRects, toast } from './util.js';
+import { $, el, escapeHtml, mergeLineRects, toast, confirmAction } from './util.js';
 import { state, emit, COLORS, makeHighlight, makePin, makeDeadZone, annotationsOnPage } from './state.js';
 
 let popupEl = null;
@@ -235,6 +235,25 @@ export function showSelectionPopup() {
     }));
     popupEl.append(el('button', {
       class: 'sp-btn',
+      title: 'Start reading aloud from here',
+      html: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 9.2a4 4 0 010 5.6"/></svg><span>Read here</span>',
+      onclick: () => {
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        const pageEl = range.startContainer.parentElement
+          && range.startContainer.parentElement.closest('.page');
+        if (!pageEl) return;
+        emit('reader:readFrom', {
+          page: Number(pageEl.dataset.page),
+          node: range.startContainer,
+          offset: range.startOffset
+        });
+        hideSelectionPopup();
+      }
+    }));
+    popupEl.append(el('button', {
+      class: 'sp-btn',
       title: 'Ask the AI about this passage',
       html: '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5 10.2 10.8 5.5 9l4.7-1.3z"/></svg><span>Ask</span>',
       onclick: () => {
@@ -334,8 +353,15 @@ export function initAnnotationUi() {
     closeNoteEditor();
   });
 
-  $('#neDelete').addEventListener('click', () => {
-    if (editorTarget) deleteAnnotation(editorTarget.id);
+  $('#neDelete').addEventListener('click', async () => {
+    if (!editorTarget) return closeNoteEditor();
+    const target = editorTarget;
+    const ok = await confirmAction({
+      message: target.type === 'pin' ? 'Delete this pin?' : 'Delete this highlight?',
+      detail: target.note ? `“${target.note.slice(0, 90)}${target.note.length > 90 ? '…' : ''}”` : '',
+      confirmLabel: 'Delete'
+    });
+    if (ok) deleteAnnotation(target.id);
     closeNoteEditor();
   });
 
@@ -395,6 +421,14 @@ export function initAnnotationUi() {
     });
   });
 
+  // Right-click a zone to remove it, whichever tool is active.
+  $('#pages').addEventListener('contextmenu', (e) => {
+    const zone = e.target.closest('.deadzone');
+    if (!zone || zone.classList.contains('drawing')) return;
+    e.preventDefault();
+    showDeadZoneMenu(zone, e.clientX, e.clientY);
+  });
+
   window.addEventListener('mouseup', (e) => {
     if (!drawing) return;
     const r = drawing.pageEl.getBoundingClientRect();
@@ -410,7 +444,17 @@ export function initAnnotationUi() {
 
   // Clicks on the page: open an existing annotation, or drop a pin.
   $('#pages').addEventListener('mousedown', (e) => {
-    if (state.tool === 'deadzone') return;
+    if (state.tool === 'deadzone') {
+      // With the tool active, clicking an existing zone selects it rather than
+      // starting a new one on top of it.
+      const existing = e.target.closest('.deadzone');
+      if (existing && !existing.classList.contains('drawing')) {
+        e.preventDefault();
+        e.stopPropagation();
+        emit('zone:select', existing.dataset.id);
+      }
+      return;
+    }
     const zone = e.target.closest('.deadzone');
     if (zone && !zone.classList.contains('drawing')) {
       e.preventDefault();
@@ -437,6 +481,22 @@ export function initAnnotationUi() {
       const r = pageEl.getBoundingClientRect();
       addPin(Number(pageEl.dataset.page), (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
     }
+  });
+
+  // A plain click on the page — no drag, no tool — moves the voice to that
+  // point when read-aloud is running.
+  $('#pages').addEventListener('click', async (e) => {
+    if (state.tool !== 'select') return;
+    if (e.target.closest('.hl, .pin, .deadzone')) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+    const pageEl = e.target.closest('.page');
+    if (!pageEl) return;
+    emit('reader:clickTo', {
+      page: Number(pageEl.dataset.page),
+      x: e.clientX,
+      y: e.clientY
+    });
   });
 
   // Selection popup follows the mouse-up that ends a drag-select.

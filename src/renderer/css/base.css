@@ -91,16 +91,30 @@ select { cursor: pointer; }
   background: var(--bg-2);
   border-bottom: 1px solid var(--line-soft);
 }
-.tabstrip { display: flex; align-items: flex-end; gap: 6px; flex: 1; min-width: 0; }
+.tabstrip {
+  display: flex; align-items: flex-end; gap: 4px; flex: 1; min-width: 0;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tabstrip::-webkit-scrollbar { display: none; }
 .doc-tab {
   -webkit-app-region: no-drag;
   display: flex; align-items: center; gap: 8px;
-  max-width: 380px; min-width: 0;
-  height: 34px; padding: 0 10px 0 12px;
-  background: var(--bg);
-  border: 1px solid var(--line-soft); border-bottom: none;
+  max-width: 240px; min-width: 110px; flex: 0 1 auto;
+  height: 34px; padding: 0 8px 0 11px;
+  background: var(--bg-3);
+  border: 1px solid transparent; border-bottom: none;
   border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  color: var(--fg-3);
 }
+.doc-tab:hover { background: var(--bg-raise); color: var(--fg-2); }
+.doc-tab.current {
+  background: var(--bg); border-color: var(--line-soft);
+  color: var(--fg);
+}
+.doc-tab .dot { opacity: 0; }
+.doc-tab.current .dot { opacity: 1; }
 .doc-tab .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
 .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .tab-close, .tab-add {
@@ -234,3 +248,27 @@ select { cursor: pointer; }
   background: var(--bg-3); border: 1px solid var(--line);
 }
 .layout-save-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ---------- confirm sheet ---------- */
+.confirm-sheet {
+  position: fixed; inset: 0; z-index: 980;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(2px);
+}
+.confirm-card {
+  width: min(380px, 88vw);
+  background: var(--bg-raise); border: 1px solid var(--line);
+  border-radius: 12px; padding: 20px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.5);
+}
+.confirm-card b { display: block; font-size: 14.5px; margin-bottom: 7px; }
+.confirm-card p { margin: 0 0 16px; color: var(--fg-2); font-size: 12.5px; line-height: 1.55; }
+.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.confirm-actions button {
+  padding: 8px 16px; border-radius: 7px; font-size: 12.5px;
+  background: var(--bg-3); border: 1px solid var(--line);
+}
+.confirm-actions button.danger { background: #d9453a; border-color: #d9453a; color: #fff; }
+.confirm-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.confirm-actions button:hover { filter: brightness(1.1); }

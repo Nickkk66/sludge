@@ -16,6 +16,7 @@ import { describeModel } from './ai.js';
  */
 
 let status = null;
+let dismissed = false;
 let models = [];
 let scanModel = null;
 let progress = null;
@@ -87,6 +88,8 @@ function render() {
 
   if (progress) return renderProgress();
   if (status && status.scanned) return renderDone();
+  if (dismissed) return renderReminder();
+  if (status && status.partial) return renderPartial();
   renderOffer();
 }
 
@@ -95,6 +98,8 @@ function renderOffer() {
   box.className = 'scan-offer';
   const est = (status && status.estimate) || { blocks: 0, seconds: 0 };
   const small = paramsOf(scanModel) < 6;
+  const half = Math.max(1, Math.ceil(est.blocks / 2));
+  const halfSeconds = half * (est.secondsPerBlock || 9);
 
   setChildren(box,
     el('div', { class: 'so-head' },
@@ -104,10 +109,10 @@ function renderOffer() {
       el('b', {}, 'Read the whole document first?')
     ),
     el('div', { class: 'so-body', html:
-      `I'll go through all ${state.numPages} pages once and write a summary of each section. ` +
-      `After that, broad questions — <em>“what is this chapter arguing?”</em> — get real answers instead of ` +
-      `whatever the nearest paragraph happened to say.<br><br>` +
-      `<em>${est.blocks} sections · about ${escapeHtml(fmtDuration(est.seconds))} · runs in the background · done once</em>`
+      `I'll read each section once and write a summary of it. After that, broad questions — ` +
+      `<em>“what is this chapter arguing?”</em> — get real answers instead of whatever the ` +
+      `nearest paragraph happened to say.<br><br>` +
+      `<em>${est.blocks} sections across ${state.numPages} pages · runs in the background · done once</em>`
     }),
     el('div', { class: 'so-row' },
       el('select', {
@@ -116,9 +121,15 @@ function renderOffer() {
           state.settings = await window.api.settings.set({ scanModel });
           refreshScanStatus();
         }
-      }, ...models.map((m) => el('option', { value: m.name, selected: m.name === scanModel }, describeModel(m)))),
-      el('button', { class: 'primary', onclick: start }, 'Scan'),
-      el('button', { onclick: () => { $('#scanOffer').hidden = true; } }, 'Not now')
+      }, ...models.map((m) => el('option', { value: m.name, selected: m.name === scanModel }, describeModel(m))))
+    ),
+    el('div', { class: 'so-row', style: { marginTop: '8px' } },
+      // Half first: a full pass is a long wait to commit to sight unseen, and
+      // the second half can be run later without redoing the first.
+      el('button', { class: 'primary', onclick: () => start(half) },
+        `Read half · ${fmtDuration(halfSeconds)}`),
+      el('button', { onclick: () => start(null) }, `All · ${fmtDuration(est.seconds)}`),
+      el('button', { onclick: dismiss }, 'Not now')
     ),
     small
       ? el('div', { class: 'so-status', style: { marginTop: '8px' } },
@@ -163,19 +174,62 @@ function renderDone() {
   ));
 }
 
+/** Half the book is read; offer to finish the rest. */
+function renderPartial() {
+  const box = $('#scanOffer');
+  box.className = 'scan-offer';
+  const left = status.remaining;
+  const seconds = left * ((status.estimate && status.estimate.secondsPerBlock) || 9);
+
+  setChildren(box,
+    el('div', { class: 'so-head' },
+      el('b', {}, `Read ${status.blocks} of ${status.estimate.blocks} sections`)),
+    el('div', { class: 'so-body', html:
+      `Questions about what I've read already get proper answers. The remaining ` +
+      `<b>${left}</b> section${left === 1 ? '' : 's'} ${left === 1 ? 'is' : 'are'} still unread — ` +
+      `finish when you get there.` }),
+    el('div', { class: 'so-bar' },
+      el('i', { style: { width: `${(status.blocks / Math.max(1, status.estimate.blocks)) * 100}%` } })),
+    el('div', { class: 'so-row', style: { marginTop: '9px' } },
+      el('button', { class: 'primary', onclick: () => start(null) }, `Finish · ${fmtDuration(seconds)}`),
+      el('button', { onclick: dismiss }, 'Later')
+    )
+  );
+}
+
+/** Hide the offer but leave a way back to it. */
+function dismiss() {
+  dismissed = true;
+  render();
+}
+
+/** A one-line way back after "Not now", so the offer is never gone for good. */
+function renderReminder() {
+  const box = $('#scanOffer');
+  box.className = 'scan-offer done';
+  const done = status && status.blocks;
+  setChildren(box, el('div', { class: 'scan-chip' },
+    el('span', {}, done ? `${done} of ${status.estimate.blocks} sections read` : 'Full document scan not run'),
+    el('button', { onclick: () => { dismissed = false; render(); } },
+      done ? 'continue' : 'scan the document')
+  ));
+}
+
 /* ------------------------------------------------------------ run */
 
-function start() {
+function start(limit) {
   if (!state.indexReady) return toast('Still reading the document — try again in a moment.');
   if (!scanModel) return toast('No local model available to scan with.');
-  progress = { done: 0, total: (status && status.estimate.blocks) || 0, from: 0, to: 0 };
+  dismissed = false;
+  progress = { done: (status && status.blocks) || 0, total: (status && status.estimate.blocks) || 0, from: 0, to: 0 };
   render();
   window.api.scan.start({
     docId: state.docId,
     model: scanModel,
     docName: state.docName,
     pages: state.pageText,
-    chapters: state.chapters || []
+    chapters: state.chapters || [],
+    limit: limit || null
   });
 }
 
@@ -194,12 +248,12 @@ export function initScan() {
     } else if (complete) {
       toast(`Scan finished — ${blocks} sections. Answers should be sharper now.`);
     } else {
-      toast(`Scan stopped after ${blocks} sections. What it got is kept and still used.`);
+      toast(`Read ${blocks} sections. The rest is still there when you want it.`);
     }
     await refreshScanStatus();
   });
 
   // The offer only makes sense once the text is extracted.
   on('index:ready', () => refreshScanStatus());
-  on('doc:loaded', () => { progress = null; status = null; });
+  on('doc:loaded', () => { progress = null; status = null; dismissed = false; });
 }

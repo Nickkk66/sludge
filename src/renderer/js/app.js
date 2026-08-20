@@ -14,13 +14,16 @@ import { initAi, refreshAiStatus, resetAiThread } from './ai.js';
 import { exportNotes } from './exporter.js';
 import { initSpeech, speech, play as speechPlay, pause as speechPause, stop as speechStop,
          toggle as speechToggle, skip as speechSkip, setRate, setVoice, getVoices, getAllVoices,
-         voicesAreBasic, refreshVoices, readingState } from './speech.js';
+         voicesAreBasic, refreshVoices, readingState, jumpToSentence, sentenceAtOffset,
+         readFrom, offsetAtPoint, isReadingPage } from './speech.js';
 import { describeVoice } from './voices.js';
 import { initDocNotes, getMarkdown, setMarkdown, togglePreview, exportDocument } from './docnotes.js';
 import { initFocus, restoreFocus, openPicker } from './focus.js';
 import { initProfile, loadProfile, showOnboarding, renderGreeting, profile } from './profile.js';
 import { initScan, refreshScanStatus, setModels } from './scan.js';
 import { initQuestions } from './questions.js';
+import { initZones, selectZone, clearSelection } from './zones.js';
+import { initTabs, tabs, addTab, setActive, removeTab, syncActive, activeTab, findTabByPath, render as renderTabs } from './tabs.js';
 import { BUILT_IN, applyLayout, captureLayout, customLayouts, saveCurrentAs, removeCustom,
          stepTeleprompterSize } from './layouts.js';
 
@@ -47,6 +50,9 @@ async function boot() {
   initProfile();
   initScan();
   initQuestions();
+  initZones();
+  initTabs();
+  wireTabs();
   wireLayouts();
   wireSpeechBar();
   wireTeleprompter();
@@ -81,11 +87,27 @@ async function boot() {
 let saveTimer = null;
 let currentDoc = null;
 
-async function openDocument(filePath) {
+async function openDocument(filePath, { newTab = true } = {}) {
+  // Already open? Just go to it rather than loading a second copy.
+  const existing = findTabByPath(filePath);
+  if (existing && existing.id !== (activeTab() || {}).id) {
+    return activateTab(existing.id);
+  }
+  if (existing) {
+    $('#welcome').hidden = true;
+    return;
+  }
+
   try {
     setSaveState('', 'Opening…');
     const doc = await window.api.openDoc(filePath);
     currentDoc = doc;
+
+    // Park the outgoing document so returning to its tab restores it intact.
+    if (newTab && activeTab()) {
+      await saveNow();
+      syncActive();
+    }
 
     // Reset per-document state before the new file lands.
     state.annotations = doc.annotations || [];
@@ -105,9 +127,13 @@ async function openDocument(filePath) {
     setMarkdown((doc.document && doc.document.markdown) || '');
 
     $('#welcome').hidden = true;
-    $('#docTab').hidden = false;
-    $('#tabName').textContent = doc.name;
     document.title = `${doc.name} — Sludge`;
+    if (newTab) addTab(doc);
+    else {
+      const tab = activeTab();
+      if (tab) Object.assign(tab, { filePath: doc.filePath, docId: doc.docId, docName: doc.name });
+      renderTabs();
+    }
 
     await loadDocument(doc.bytes);
     $('#pageTotal').textContent = String(state.numPages);
@@ -174,6 +200,106 @@ async function showStartScreen() {
   await renderRecent();
 }
 
+/**
+ * Switch to another open document. The PDF has to be re-opened because the
+ * viewer keeps one pdf.js instance, but everything else comes back from the
+ * tab's snapshot, including the reading position.
+ */
+async function activateTab(id) {
+  const current = activeTab();
+  if (current) {
+    await saveNow();
+    syncActive({ position: getPosition() });
+  }
+  const tab = setActive(id);
+  if (!tab) return;
+
+  speechStop();
+  clearSearch();
+  destroy();
+
+  const doc = await window.api.openDoc(tab.filePath);
+  currentDoc = doc;
+  state.annotations = doc.annotations || [];
+  state.docId = doc.docId;
+  state.filePath = doc.filePath;
+  state.docName = doc.name;
+  state.pageText = tab.pageText || [];
+  state.indexReady = !!tab.indexReady;
+  state.chapters = tab.chapters || [];
+  setMarkdown((doc.document && doc.document.markdown) || '');
+  resetAiThread();
+
+  document.title = `${doc.name} — Sludge`;
+  $('#welcome').hidden = true;
+
+  await loadDocument(doc.bytes);
+  $('#pageTotal').textContent = String(state.numPages);
+  if (tab.zoomMode) { state.zoomMode = tab.zoomMode; $('#zoomSelect').value = tab.zoomMode; setZoom(tab.zoomMode); }
+
+  buildThumbnails();
+  buildOutline();
+  renderNotesPanel();
+  restorePosition(tab.position || doc.lastPosition || { page: 1, within: 0 });
+
+  if (!state.indexReady) {
+    buildTextIndex(doc.docId, (done, total) => {
+      setSaveState('', `Reading document… ${Math.round((done / total) * 100)}%`);
+      if (done >= total) setSaveState('saved', 'Saved');
+    }).catch(() => {});
+  }
+  setSaveState('saved', 'Saved');
+}
+
+function wireTabs() {
+  on('tab:activate', (id) => activateTab(id));
+  on('tab:new', () => showStartScreen());
+  on('tab:close', (id) => closeTab(id));
+}
+
+/** Close one tab, falling back to whatever is left. */
+async function closeTab(id) {
+  const tab = tabs.find((t) => t.id === id);
+  if (!tab) return;
+  const isActive = (activeTab() || {}).id === id;
+  if (isActive) await saveNow();
+
+  const { next } = removeTab(id);
+  if (!isActive) return;
+
+  if (next) {
+    // removeTab already made `next` active, so restore it from disk.
+    await activateTabFrom(next);
+  } else {
+    await closeDocument();
+  }
+}
+
+async function activateTabFrom(tab) {
+  speechStop();
+  clearSearch();
+  destroy();
+  const doc = await window.api.openDoc(tab.filePath);
+  currentDoc = doc;
+  state.annotations = doc.annotations || [];
+  state.docId = doc.docId;
+  state.filePath = doc.filePath;
+  state.docName = doc.name;
+  state.pageText = tab.pageText || [];
+  state.indexReady = !!tab.indexReady;
+  state.chapters = tab.chapters || [];
+  setMarkdown((doc.document && doc.document.markdown) || '');
+  resetAiThread();
+  document.title = `${doc.name} — Sludge`;
+  await loadDocument(doc.bytes);
+  $('#pageTotal').textContent = String(state.numPages);
+  buildThumbnails();
+  buildOutline();
+  renderNotesPanel();
+  restorePosition(tab.position || doc.lastPosition || { page: 1, within: 0 });
+  setSaveState('saved', 'Saved');
+}
+
 async function closeDocument() {
   await saveNow();
   speechStop();
@@ -183,8 +309,10 @@ async function closeDocument() {
   state.docId = state.filePath = state.docName = null;
   state.annotations = [];
   state.numPages = 0;
-  $('#docTab').hidden = true;
+  state.pageText = [];
+  state.indexReady = false;
   $('#welcome').hidden = false;
+  $('#welcomeBack').hidden = true;
   $('#pageTotal').textContent = '0';
   document.title = 'Sludge';
   clearSearch();
@@ -287,7 +415,9 @@ function setTool(tool) {
   state.tool = tool;
   $$('.rb[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === tool));
   $('#colorbar').hidden = !(tool === 'highlight' || tool === 'pin');
-  if (tool === 'deadzone') toast('Drag a box over anything that should be skipped.');
+  $('#spDeadZone').classList.toggle('active', tool === 'deadzone');
+  if (tool === 'deadzone') toast('Drag a box over anything that should be skipped. Click a zone to select it, Backspace to delete.');
+  else clearSelection();
   applyTool();
   if (tool !== 'select') hideSelectionPopup();
 }
@@ -309,7 +439,7 @@ function openLeftPanel(view, { force = false } = {}) {
   syncRibbonState();
 }
 
-const PANEL_TITLES = { thumbnails: 'Pages', outline: 'Chapters', search: 'Search', notes: 'Notes' };
+const PANEL_TITLES = { thumbnails: 'Pages', outline: 'Chapters', search: 'Search', notes: 'Notes', zones: 'Dead zones' };
 
 /** Show which panels are open, so the ribbon reflects the actual state. */
 function syncRibbonState() {
@@ -431,17 +561,13 @@ function wireChrome() {
   ['#btnOpen', '#welcomeOpen', '#libraryAdd'].forEach((sel) =>
     $(sel).addEventListener('click', async () => { hideLibrary(); await open(); }));
 
-  // The + shows the start screen rather than a file dialog — "Open a PDF" is
-  // already sitting on it, and the greeting is the better landing place.
-  $('#tabAdd').addEventListener('click', showStartScreen);
-
   $('#welcomeBack').addEventListener('click', () => { $('#welcome').hidden = true; });
   ['#btnLibrary', '#btnLibraryTop', '#welcomeLibrary'].forEach((sel) =>
     $(sel).addEventListener('click', showLibrary));
   $('#libraryClose').addEventListener('click', hideLibrary);
   $('#libraryModal').addEventListener('click', (e) => { if (e.target.id === 'libraryModal') hideLibrary(); });
 
-  $('#tabClose').addEventListener('click', closeDocument);
+
 
   $('#btnThumbs').addEventListener('click', () => openLeftPanel('thumbnails'));
   $('#btnOutline').addEventListener('click', () => openLeftPanel('outline'));
@@ -454,6 +580,12 @@ function wireChrome() {
 
   // The left Notes view mirrors the ribbon's note actions, so both routes work.
   $('#sideAllNotes').addEventListener('click', () => openRightPanel('notes'));
+  $('#spDeadZone').addEventListener('click', () => {
+    setTool(state.tool === 'deadzone' ? 'select' : 'deadzone');
+    $('#spDeadZone').classList.toggle('active', state.tool === 'deadzone');
+    if (state.tool === 'deadzone') openLeftPanel('zones', { force: true });
+  });
+  on('zone:select', (id) => selectZone(id));
   $('#sideExport').addEventListener('click', exportNotes);
 
   ['#btnNotesPanel', '#btnNotesPanel2'].forEach((s) => $(s).addEventListener('click', () => toggleRightPanel('notes')));
@@ -682,6 +814,30 @@ function wireUpdates() {
 function wireSpeechBar() {
   const bar = $('#speechbar');
 
+  // Click anywhere on the page to move the voice there.
+  on('reader:clickTo', async ({ page, x, y }) => {
+    if (!speech.playing && !speech.paused) return;
+    if (!isReadingPage(page)) {
+      await readFrom(page, null, { play: speech.playing });
+      return;
+    }
+    const offset = offsetAtPoint(page, x, y);
+    if (offset !== null) jumpToSentenceWord(offset);
+  });
+
+  // "Read here" on a text selection.
+  on('reader:readFrom', async ({ page, node, offset }) => {
+    bar.hidden = false;
+    fillVoices();
+    if (!isReadingPage(page)) {
+      await readFrom(page, null, { play: true });
+    }
+    const { offsetOfNode } = await import('./speech.js');
+    const at = offsetOfNode(node, offset);
+    if (at !== null) jumpToSentenceWord(at);
+    if (!speech.playing) speechToggle();
+  });
+
   const openBar = () => {
     bar.hidden = false;
     fillVoices();
@@ -821,6 +977,12 @@ function openVoiceGuide() {
 
 /* ---------------- teleprompter ---------------- */
 
+/** Move the voice to the sentence containing a page-level character offset. */
+function jumpToSentenceWord(offset) {
+  const i = sentenceAtOffset(offset);
+  if (i >= 0) jumpToSentence(i);
+}
+
 const fmtClock = (ms) => {
   const total = Math.max(0, Math.round(ms / 1000));
   const m = Math.floor(total / 60);
@@ -892,7 +1054,7 @@ function markTeleprompterWord(start, end) {
 }
 
 /* The six places it can land. Bottom is home. */
-const TP_SPOTS = ['bottom', 'bottom-left', 'bottom-right', 'top', 'top-left', 'top-right'];
+const TP_SPOTS = ['centre', 'bottom', 'bottom-left', 'bottom-right', 'top', 'top-left', 'top-right'];
 
 function setTeleprompterSpot(spot) {
   const next = TP_SPOTS.includes(spot) ? spot : 'bottom';
@@ -911,6 +1073,7 @@ function spotRect(spot, w, h) {
   const midX = (window.innerWidth - w) / 2;
   const rightX = window.innerWidth - w - pad;
   const map = {
+    centre: [midX, Math.max(120, (window.innerHeight - h) / 2)],
     bottom: [midX, bottomY],
     'bottom-left': [pad, bottomY],
     'bottom-right': [rightX, bottomY],
@@ -987,7 +1150,56 @@ function wireTeleprompterDrag() {
   $('#tpGrip').addEventListener('dblclick', () => setTeleprompterSpot('bottom'));
 }
 
+/** Drag along the caption progress bar to scrub through the page's sentences. */
+function wireCaptionScrub() {
+  const bar = $('#tpProgress');
+  if (!bar) return;
+  let scrubbing = false;
+
+  const seek = (clientX) => {
+    const st = readingState();
+    if (!st.total) return;
+    const r = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    const target = Math.min(st.total - 1, Math.floor(ratio * st.total));
+    $('#tpBar').style.width = `${ratio * 100}%`;
+    return target;
+  };
+
+  bar.addEventListener('mousedown', (e) => {
+    scrubbing = true;
+    bar.classList.add('scrubbing');
+    seek(e.clientX);
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!scrubbing) return;
+    const target = seek(e.clientX);
+    if (target !== undefined) $('#tpMeta').textContent = `jump to sentence ${target + 1}`;
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (!scrubbing) return;
+    scrubbing = false;
+    bar.classList.remove('scrubbing');
+    const target = seek(e.clientX);
+    if (target !== undefined) jumpToSentence(target);
+  });
+}
+
 function wireTeleprompter() {
+  wireCaptionScrub();
+
+  // Clicking a word in the captions moves the voice to it.
+  $('#tpLine').addEventListener('click', (e) => {
+    const w = e.target.closest('.w');
+    if (!w) return;
+    const st = readingState();
+    const at = Number(w.dataset.at);
+    // Offsets in the panel are within the sentence; convert to page offsets.
+    const sentenceStart = st.startOffset || 0;
+    jumpToSentenceWord(sentenceStart + at);
+  });
+
   teleprompterOn = state.settings.teleprompter !== false;
   $('#spShowText').checked = teleprompterOn;
   setTeleprompterSpot(state.settings.teleprompterSpot || 'bottom');
@@ -1036,7 +1248,16 @@ function toggleSplit() {
 
 function wireKeyboard() {
   document.addEventListener('keydown', (e) => {
-    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)
+      || document.activeElement.isContentEditable;
+
+    // Space pauses the voice from anywhere except a text field — it's the one
+    // control worth having always to hand while listening.
+    if (e.code === 'Space' && !typing && (speech.playing || speech.paused)) {
+      e.preventDefault();
+      speechToggle();
+      return;
+    }
 
     if (e.key === 'Escape') {
       hideSelectionPopup();
@@ -1060,9 +1281,7 @@ function wireKeyboard() {
       case 'r': if (!e.metaKey) { $('#btnRead').click(); } break;
       case ' ':
         e.preventDefault();
-        // Space controls read-aloud while it's running, and the hand tool otherwise.
-        if (speech.playing || speech.paused) speechToggle();
-        else setTool(state.tool === 'hand' ? 'select' : 'hand');
+        setTool(state.tool === 'hand' ? 'select' : 'hand');
         break;
       default: break;
     }
