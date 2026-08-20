@@ -324,7 +324,7 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
 .tp-grip:hover .tp-grip-dots { background: var(--fg-3); }
 
 .tp-line {
-  font-size: 19px; line-height: 1.6; color: var(--fg-2);
+  font-size: var(--tp-size, 19px); line-height: 1.6; color: var(--fg-2);
   text-align: center; user-select: text;
   /* A long sentence scrolls inside the panel; the word being spoken is kept
      vertically centred, so the read position never drifts out of view. */
@@ -349,6 +349,11 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
 .tp-progress { flex: 1; height: 4px; background: var(--bg-3); border-radius: 2px; overflow: hidden; }
 .tp-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 .tp-left { flex: none; font-variant-numeric: tabular-nums; }
+.tp-size {
+  color: var(--fg-3); padding: 3px 6px; border-radius: 5px; flex: none;
+  font-size: 11px; font-weight: 600;
+}
+.tp-size:hover { background: var(--bg-3); color: var(--fg); }
 .tp-close { color: var(--fg-3); padding: 3px 6px; border-radius: 5px; flex: none; }
 .tp-close:hover { background: var(--bg-3); color: var(--fg); }
 

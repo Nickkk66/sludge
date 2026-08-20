@@ -14,13 +14,15 @@ import { initAi, refreshAiStatus, resetAiThread } from './ai.js';
 import { exportNotes } from './exporter.js';
 import { initSpeech, speech, play as speechPlay, pause as speechPause, stop as speechStop,
          toggle as speechToggle, skip as speechSkip, setRate, setVoice, getVoices, getAllVoices,
-         voicesAreBasic, readingState } from './speech.js';
+         voicesAreBasic, refreshVoices, readingState } from './speech.js';
 import { describeVoice } from './voices.js';
 import { initDocNotes, getMarkdown, setMarkdown, togglePreview, exportDocument } from './docnotes.js';
 import { initFocus, restoreFocus, openPicker } from './focus.js';
 import { initProfile, loadProfile, showOnboarding, renderGreeting, profile } from './profile.js';
 import { initScan, refreshScanStatus, setModels } from './scan.js';
 import { initQuestions } from './questions.js';
+import { BUILT_IN, applyLayout, captureLayout, customLayouts, saveCurrentAs, removeCustom,
+         stepTeleprompterSize } from './layouts.js';
 
 /* ------------------------------------------------------------ boot */
 
@@ -45,6 +47,7 @@ async function boot() {
   initProfile();
   initScan();
   initQuestions();
+  wireLayouts();
   wireSpeechBar();
   wireTeleprompter();
   wireDocument();
@@ -289,10 +292,10 @@ function setTool(tool) {
   if (tool !== 'select') hideSelectionPopup();
 }
 
-function openLeftPanel(view) {
+function openLeftPanel(view, { force = false } = {}) {
   const main = $('#main');
   const already = $(`#rail .rail-btn[data-panel="${view}"]`).classList.contains('active');
-  if (already && !main.classList.contains('left-collapsed')) {
+  if (!force && already && !main.classList.contains('left-collapsed')) {
     main.classList.add('left-collapsed');
     syncRibbonState();
     return;
@@ -530,6 +533,124 @@ function wireChrome() {
   on('panel:right', (view) => openRightPanel(view));
 }
 
+/* ------------------------------------------------------------ setups */
+
+/** The panel operations a layout needs, kept in one place. */
+const layoutHooks = () => ({
+  openLeft: (view) => openLeftPanel(view, { force: true }),
+  collapseLeft: () => { $('#main').classList.add('left-collapsed'); syncRibbonState(); },
+  openRight: (view) => openRightPanel(view),
+  closeRight: () => closeRightPanel(),
+  setWide: (on) => {
+    $('#main').classList.toggle('right-wide', on);
+    $('#btnDocSnap').classList.toggle('active', on);
+  },
+  setSpot: (spot) => setTeleprompterSpot(spot)
+});
+
+async function useLayout(entry) {
+  await applyLayout(entry.layout, layoutHooks());
+  state.settings = await window.api.settings.set({ lastLayout: entry.id });
+  toast(`Setup: ${entry.name}`);
+}
+
+function wireLayouts() {
+  $('#btnLayouts').addEventListener('click', (e) => openLayoutMenu(e.currentTarget));
+  $('#tpBigger').addEventListener('click', () => stepTeleprompterSize(1));
+  $('#tpSmaller').addEventListener('click', () => stepTeleprompterSize(-1));
+
+  const size = state.settings.teleprompterSize;
+  if (size) document.documentElement.style.setProperty('--tp-size', `${size}px`);
+}
+
+function openLayoutMenu(anchor) {
+  document.querySelectorAll('.ctx-menu').forEach((n) => n.remove());
+
+  const rows = [];
+  rows.push(el('div', { class: 'ctx-head' }, 'Setups'));
+
+  for (const entry of BUILT_IN) {
+    rows.push(el('button', {
+      class: 'ctx-item layout-item',
+      onclick: () => { menu.remove(); useLayout(entry); }
+    },
+      el('span', {},
+        el('b', {}, entry.name),
+        el('small', {}, entry.hint))
+    ));
+  }
+
+  const mine = customLayouts();
+  if (mine.length) {
+    rows.push(el('div', { class: 'ctx-head' }, 'Yours'));
+    for (const entry of mine) {
+      rows.push(el('div', { class: 'layout-row' },
+        el('button', {
+          class: 'ctx-item layout-item grow',
+          onclick: () => { menu.remove(); useLayout(entry); }
+        }, el('span', {}, el('b', {}, entry.name), el('small', {}, 'saved setup'))),
+        el('button', {
+          class: 'layout-del',
+          title: 'Delete this setup',
+          onclick: async (ev) => {
+            ev.stopPropagation();
+            await removeCustom(entry.id);
+            menu.remove();
+            openLayoutMenu(anchor);
+          }
+        }, '✕')
+      ));
+    }
+  }
+
+  rows.push(el('div', { class: 'ctx-sep' }));
+  rows.push(el('button', {
+    class: 'ctx-item',
+    onclick: () => { menu.remove(); promptSaveLayout(); }
+  }, el('span', { class: 'ctx-check' }, '＋'), 'Save this arrangement…'));
+
+  const menu = el('div', { class: 'ctx-menu layout-menu' }, ...rows);
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(window.innerWidth - menu.offsetWidth - 8, r.right - menu.offsetWidth))}px`;
+  menu.style.top = `${r.bottom + 6}px`;
+
+  const close = (ev) => {
+    if (menu.contains(ev.target)) return;
+    menu.remove();
+    document.removeEventListener('mousedown', close);
+  };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+
+/** Name the current arrangement so it can be recalled later. */
+function promptSaveLayout() {
+  document.querySelectorAll('.ctx-menu').forEach((n) => n.remove());
+  const input = el('input', { placeholder: 'Name this setup', maxlength: '40' });
+  const commit = async () => {
+    const entry = await saveCurrentAs(input.value);
+    box.remove();
+    if (entry) toast(`Saved “${entry.name}”`);
+  };
+  const box = el('div', { class: 'ctx-menu layout-save' },
+    el('div', { class: 'ctx-head' }, 'Save the current arrangement'),
+    input,
+    el('div', { class: 'layout-save-actions' },
+      el('button', { onclick: () => box.remove() }, 'Cancel'),
+      el('button', { class: 'primary', onclick: commit }, 'Save')
+    )
+  );
+  document.body.append(box);
+  const r = $('#btnLayouts').getBoundingClientRect();
+  box.style.left = `${Math.max(8, r.right - box.offsetWidth)}px`;
+  box.style.top = `${r.bottom + 6}px`;
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); box.remove(); }
+  });
+  setTimeout(() => input.focus(), 30);
+}
+
 /* ------------------------------------------------------------ updates */
 
 function wireUpdates() {
@@ -592,6 +713,11 @@ function wireSpeechBar() {
       fillVoices();
       return;
     }
+    if (e.target.value === '__few__') {
+      showAllVoices = false;
+      fillVoices();
+      return;
+    }
     setVoice(e.target.value);
   });
   // Populate up front so the picker is ready the first time the bar appears.
@@ -604,13 +730,21 @@ function wireSpeechBar() {
   });
   $('#voiceOpenSettings').addEventListener('click', () => window.api.openVoiceSettings());
   $('#voiceRecheck').addEventListener('click', () => {
+    // Re-read the system list rather than the cached one.
+    refreshVoices();
     fillVoices();
-    if (voicesAreBasic()) toast('Still only the basic voices — the download may not have finished.');
-    else {
+    if (!voicesAreBasic()) {
       toast('Better voices found.');
       $('#voiceModal').classList.add('hidden');
+      return;
     }
+    // Chromium sometimes keeps the voice list it saw at startup, so a restart
+    // is the reliable way to pick up a voice that finished downloading.
+    $('#voiceRestart').hidden = false;
+    toast('Still the old list — if the download finished, restart Sludge to pick it up.');
   });
+
+  $('#voiceRestart').addEventListener('click', () => window.api.restart());
 
   $('#spShowText').addEventListener('change', async (e) => {
     teleprompterOn = e.target.checked;
@@ -650,10 +784,13 @@ function fillVoices() {
 
   if (showAllVoices) {
     const all = getAllVoices();
-    select.replaceChildren(...all.map((v) => el('option', {
-      value: v.voiceURI,
-      selected: v.voiceURI === speech.voiceURI
-    }, `${v.name} (${v.lang})`)));
+    select.replaceChildren(
+      ...all.map((v) => el('option', {
+        value: v.voiceURI,
+        selected: v.voiceURI === speech.voiceURI
+      }, `${v.name} (${v.lang})`)),
+      el('option', { value: '__few__' }, '← Back to the four main voices')
+    );
     return;
   }
 

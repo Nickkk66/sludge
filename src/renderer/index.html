@@ -29,6 +29,9 @@
     <button class="icon-btn" id="btnAiTop" title="Ask AI (⌘4)">
       <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5 10.2 10.8 5.5 9l4.7-1.3z"/><circle cx="18" cy="17.5" r="2.2"/></svg>
     </button>
+    <button class="icon-btn" id="btnLayouts" title="Setups — arrange the window in one click">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M10 4.5v15M10 12h11"/></svg>
+    </button>
     <button class="icon-btn" id="btnFocus" title="Focus video">
       <svg viewBox="0 0 24 24"><path d="M4 5.5h11a1.5 1.5 0 011.5 1.5v10a1.5 1.5 0 01-1.5 1.5H4A1.5 1.5 0 012.5 17V7A1.5 1.5 0 014 5.5z"/><path d="M16.5 10.5l4-2.4v7.8l-4-2.4z"/></svg>
     </button>
@@ -178,9 +181,9 @@
       <span>Export</span>
     </button>
     <div class="rb-sep"></div>
-    <button class="rb" id="btnDocPreview">
-      <svg viewBox="0 0 24 24"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
-      <span>Preview</span>
+    <button class="rb" id="btnDocPreview" title="Show your notes rendered — headings, bullets and tick boxes — beside what you typed">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M12 4.5v15"/><path d="M6 9h3M6 12h3"/><path d="M15 9h3M15 12h2.2"/></svg>
+      <span>Formatted</span>
     </button>
     <div class="rb-spacer"></div>
     <div class="ribbon-hint">Markdown notes saved with this PDF. Type <b>/</b> for blocks, select text and use <b>AI</b> to rewrite it.</div>
@@ -514,18 +517,23 @@ This saves next to your PDF, with your highlights."></textarea>
       <ol class="voice-quick">
         <li><b>Accessibility → Read &amp; Speak</b></li>
         <li><b>System voice → ⓘ → Manage Voices…</b></li>
-        <li>English → grab a <b>Premium</b> voice</li>
+        <li><b>Search</b> each name below, tick it, wait for the download</li>
       </ol>
 
+      <p class="voice-hint">Grab the <b>Premium</b> version where there is one — otherwise <b>Enhanced</b>. Plain names are the robotic ones.</p>
+
       <div class="voice-picks">
-        <span><b>Ava</b> US ♀</span>
-        <span><b>Tom</b> US ♂</span>
-        <span><b>Serena</b> UK ♀</span>
-        <span><b>Daniel</b> UK ♂</span>
+        <span><b>Ava</b> Premium · US ♀</span>
+        <span><b>Tom</b> Premium · US ♂</span>
+        <span><b>Serena</b> Premium · UK ♀</span>
+        <span><b>Daniel</b> Enhanced · UK ♂</span>
       </div>
+
+      <p class="voice-note">Downloaded a voice and Sludge still says robotic? Hit <b>Recheck</b> — macOS sometimes only hands the new voice over after a restart.</p>
     </div>
     <div class="modal-foot">
       <button class="link-btn" id="voiceRecheck">Recheck</button>
+      <button class="big-btn" id="voiceRestart" hidden>Restart Sludge</button>
       <div class="grow"></div>
       <button class="big-btn primary" id="voiceOpenSettings">Take me there</button>
     </div>
@@ -619,6 +627,8 @@ This saves next to your PDF, with your highlights."></textarea>
     <span class="tp-meta" id="tpMeta"></span>
     <div class="tp-progress"><i id="tpBar"></i></div>
     <span class="tp-left" id="tpLeft"></span>
+    <button class="tp-size" id="tpSmaller" title="Smaller text">A−</button>
+    <button class="tp-size" id="tpBigger" title="Bigger text">A+</button>
     <button class="tp-close" id="tpClose" title="Hide the reading panel">✕</button>
   </div>
 </div>

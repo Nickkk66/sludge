@@ -213,3 +213,24 @@ select { cursor: pointer; }
 .ub-go:hover { filter: brightness(1.08); }
 .ub-close { color: var(--fg-3); padding: 4px 6px; border-radius: 5px; flex: none; }
 .ub-close:hover { background: var(--bg-3); color: var(--fg); }
+
+/* ---------- setups menu ---------- */
+.layout-menu { min-width: 268px; }
+.ctx-sep { height: 1px; background: var(--line-soft); margin: 5px 4px; }
+.layout-item span { display: flex; flex-direction: column; gap: 1px; text-align: left; }
+.layout-item b { font-size: 12.5px; font-weight: 600; color: var(--fg); }
+.layout-item small { font-size: 11px; color: var(--fg-3); line-height: 1.35; }
+.layout-row { display: flex; align-items: stretch; gap: 2px; }
+.layout-row .grow { flex: 1; }
+.layout-del {
+  width: 26px; border-radius: 6px; color: var(--fg-3); font-size: 11px; flex: none;
+}
+.layout-del:hover { background: rgba(226,88,77,.18); color: #e2584d; }
+.layout-save { min-width: 250px; padding: 9px; }
+.layout-save input { width: 100%; margin-bottom: 8px; }
+.layout-save-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.layout-save-actions button {
+  padding: 6px 13px; border-radius: 6px; font-size: 12px;
+  background: var(--bg-3); border: 1px solid var(--line);
+}
+.layout-save-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }

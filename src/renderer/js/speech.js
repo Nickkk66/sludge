@@ -50,6 +50,16 @@ export function getVoices() {
   return voices;
 }
 
+/**
+ * Force a fresh read of the system voice list. Needed after the reader
+ * downloads new voices — the cached list would otherwise report the old set.
+ */
+export function refreshVoices() {
+  loadVoices();
+  emit('speech:voices');
+  return voices;
+}
+
 /** Every usable English voice, for readers who want the full list. */
 export function getAllVoices() {
   if (!rawVoices.length) loadVoices();

@@ -65,7 +65,9 @@ It's a PDF app. Yes, basic. But:
   old robotic ones are installed, says so, and walks you through adding the good ones
   (System Settings → Accessibility → Spoken Content → Manage Voices → anything marked
   **Premium**). It picks the highest-quality voice available for each slot automatically.
-- "Show every English voice…" is there if you want the unfiltered list.
+- "Show every English voice…" opens the unfiltered list, with a way back to the four.
+- Downloaded a voice and it still says robotic? **Recheck** re-reads the system list, and
+  offers a restart — Chromium sometimes holds on to the voice list it saw at startup.
 
 ![Read-aloud highlighting a sentence while notes are written alongside](docs/screenshot-reading.png)
 
@@ -79,6 +81,14 @@ It's a PDF app. Yes, basic. But:
   turn into bullets, or generate study questions.
 - Send any highlight straight into the document from the notes panel.
 - Split view widens it to half the window so you can read and write at once.
+
+**Setups**
+- The window arrangement — which edge the video is on, how big the captions are, which
+  side panel is open and how wide — is a lot to redo by hand every session, so it's saved
+  as a **setup** you apply in one click from the title bar.
+- Four to start: **Full brainrot** (video left, big captions, document right),
+  **Just the video**, **Read to me**, and **Just the PDF**.
+- Arrange the window however you like and save it as your own; delete it from the same menu.
 
 **Brainrot mode**
 - A silent, looping gameplay strip — Minecraft parkour or Subway Surfers — that runs

@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   setTheme: (theme) => call('theme:set', theme),
   openVoiceSettings: () => call('voices:openSettings'),
+  restart: () => call('app:restart'),
 
   ai: {
     status: (autostart) => call('ai:status', autostart),

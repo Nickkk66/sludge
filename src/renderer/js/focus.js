@@ -236,6 +236,16 @@ export function initFocus() {
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
+/** Packs that are actually downloaded, for anything that needs to start one. */
+export async function installedPacks() {
+  const data = await window.api.media.list().catch(() => null);
+  if (!data) return [];
+  packs = data.packs;
+  return packs.filter((p) => p.installed);
+}
+
+export const currentPack = () => current;
+
 /** Restore the strip if it was on when the app last closed. */
 export async function restoreFocus() {
   const h = state.settings.focusHeight;
