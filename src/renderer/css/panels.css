@@ -374,3 +374,34 @@
 .onboard-field > span { display: block; color: var(--fg-2); font-size: 12px; margin-bottom: 6px; }
 .onboard-field input, .onboard-field select, .onboard-field textarea { width: 100%; }
 .onboard-field textarea { resize: vertical; }
+
+/* ---------- full document scan ---------- */
+.scan-offer {
+  flex: none; margin: 12px 12px 0;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg); padding: 12px 13px;
+}
+.scan-offer.done { border-color: transparent; background: transparent; padding: 8px 13px 0; }
+.so-head { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.so-head b { font-size: 12.5px; }
+.so-head svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
+.so-body { color: var(--fg-2); font-size: 12px; line-height: 1.55; margin-bottom: 10px; }
+.so-body em { color: var(--fg-3); font-style: normal; }
+.so-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.so-row select { flex: 1; min-width: 130px; font-size: 11.5px; padding: 5px 7px; }
+.so-row button {
+  padding: 6px 13px; border-radius: 7px; font-size: 12px;
+  background: var(--bg-3); border: 1px solid var(--line);
+}
+.so-row button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.so-row button:hover { filter: brightness(1.08); }
+.so-bar { height: 5px; background: var(--bg-3); border-radius: 3px; overflow: hidden; margin: 9px 0 6px; }
+.so-bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .25s; }
+.so-status { color: var(--fg-3); font-size: 11px; line-height: 1.5; }
+.scan-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--fg-3); font-size: 11px;
+}
+.scan-chip b { color: #5fbf7f; font-weight: 600; }
+.scan-chip button { color: var(--fg-3); font-size: 11px; text-decoration: underline; }
+.scan-chip button:hover { color: var(--fg); }

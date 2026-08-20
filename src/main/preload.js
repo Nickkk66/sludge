@@ -65,6 +65,15 @@ contextBridge.exposeInMainWorld('api', {
     onError: (cb) => ipcRenderer.on('ai:error', (_e, p) => cb(p))
   },
 
+  scan: {
+    status: (payload) => call('scan:status', payload),
+    clear: (docId) => call('scan:clear', docId),
+    start: (payload) => ipcRenderer.send('scan:start', payload),
+    cancel: (docId) => ipcRenderer.send('scan:cancel', docId),
+    onProgress: (cb) => ipcRenderer.on('scan:progress', (_e, p) => cb(p)),
+    onDone: (cb) => ipcRenderer.on('scan:done', (_e, p) => cb(p))
+  },
+
   // Electron 32 removed File.path; this is the supported replacement.
   pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return null; } },
 

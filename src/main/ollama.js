@@ -15,6 +15,12 @@ let serveProc = null;
 async function api(path, opts = {}, timeoutMs = 4000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  // A caller's own signal (a cancelled scan) aborts the request too.
+  const external = opts.signal;
+  if (external) {
+    if (external.aborted) ctrl.abort();
+    else external.addEventListener('abort', () => ctrl.abort(), { once: true });
+  }
   try {
     return await fetch(`${HOST}${path}`, { ...opts, signal: ctrl.signal });
   } finally {
@@ -91,15 +97,29 @@ Rules:
    answer, say so plainly and name what you'd need. Never invent page numbers,
    dates, names, or quotes.
 2. Cite the book as [p. 42] right after the claim it supports.
-3. When you use the reader's own material, say so explicitly in the sentence —
+3. SECTION OVERVIEWS are summaries of whole sections, useful for the shape of a
+   topic. When the reader says "this chapter" or "this section", they mean the
+   one marked as the section they are currently on. Prefer BOOK EXCERPTS for any
+   specific fact, quote, date or name — the overviews are compressed and must
+   never be quoted as if they were the text.
+4. When you use the reader's own material, say so explicitly in the sentence —
    "your note on p. 42 says …" or "you highlighted …" — and cite it [note, p. 42].
    Never blur the reader's notes together with the book's text.
-4. Be direct and brief. Lead with the answer, then support it. Short paragraphs
+5. Be direct and brief. Lead with the answer, then support it. Short paragraphs
    or tight bullets. No preamble, no restating the question.`;
 
 function buildPrompt({ query, evidence, docName }) {
   const parts = [];
   parts.push(`Document: ${docName || 'this PDF'}`);
+
+  if (evidence.overview && evidence.overview.length) {
+    parts.push('\n=== SECTION OVERVIEWS (from a full scan of this document) ===');
+    for (const o of evidence.overview) {
+      const where = o.chapter ? `${o.chapter}, pp. ${o.from}-${o.to}` : `pp. ${o.from}-${o.to}`;
+      const mark = o.current ? ' — THE SECTION THE READER IS CURRENTLY ON' : '';
+      parts.push(`[${where}${mark}] ${o.summary}`);
+    }
+  }
 
   if (evidence.pages.length) {
     parts.push('\n=== BOOK EXCERPTS ===');
@@ -184,7 +204,7 @@ function chat({ model, query, evidence, docName, history = [], profile = null },
  * One-shot text transformation for the note document. Unlike `chat` this has
  * no document evidence attached — it only ever sees the text handed to it.
  */
-async function rewrite({ model, instruction, text, profile = null }) {
+async function rewrite({ model, instruction, text, profile = null, signal = null }) {
   const res = await api('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -202,7 +222,8 @@ async function rewrite({ model, instruction, text, profile = null }) {
         { role: 'user', content: `${instruction}\n\n---\n${text}` }
       ],
       options: { temperature: 0.3, num_ctx: 4096 }
-    })
+    }),
+    signal
   }, 180000);
   if (!res.ok) throw new Error(`Ollama responded ${res.status}`);
   const data = await res.json();
@@ -210,6 +231,31 @@ async function rewrite({ model, instruction, text, profile = null }) {
   // Small models like to wrap answers in a fence even when told not to.
   out = out.replace(/^\s*```[a-z]*\n([\s\S]*?)\n?```\s*$/i, '$1');
   return out.trim();
+}
+
+/**
+ * A single summarisation turn for the document scan. Separate from `rewrite`
+ * because it needs its own system prompt and a tight output budget.
+ */
+async function summarise({ model, system, prompt, signal = null }) {
+  const res = await api('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      keep_alive: '25m',
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: prompt }
+      ],
+      options: { temperature: 0.1, num_ctx: 4096, num_predict: 260 }
+    }),
+    signal
+  }, 240000);
+  if (!res.ok) throw new Error(`Ollama responded ${res.status}`);
+  const data = await res.json();
+  return ((data.message && data.message.content) || '').trim();
 }
 
 /**
@@ -230,4 +276,4 @@ async function warm(model) {
   }
 }
 
-module.exports = { status, listModels, pickDefault, chat, rewrite, warm, startServer, SYSTEM_PROMPT, buildPrompt };
+module.exports = { status, listModels, pickDefault, chat, rewrite, summarise, warm, startServer, SYSTEM_PROMPT, buildPrompt };

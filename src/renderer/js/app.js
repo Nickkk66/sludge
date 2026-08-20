@@ -17,6 +17,7 @@ import { initSpeech, speech, play as speechPlay, pause as speechPause, stop as s
 import { initDocNotes, getMarkdown, setMarkdown, togglePreview, exportDocument } from './docnotes.js';
 import { initFocus, restoreFocus, openPicker } from './focus.js';
 import { initProfile, loadProfile, showOnboarding, renderGreeting, profile } from './profile.js';
+import { initScan, refreshScanStatus, setModels } from './scan.js';
 
 /* ------------------------------------------------------------ boot */
 
@@ -39,6 +40,7 @@ async function boot() {
   initDocNotes();
   initFocus();
   initProfile();
+  initScan();
   wireSpeechBar();
   wireDocument();
   wireUpdates();
@@ -308,6 +310,7 @@ function openRightPanel(view) {
   $$('#rightPanel .panel-view').forEach((p) => p.classList.toggle('active', p.dataset.view === view));
   if (view === 'ai') {
     refreshAiStatus();
+    refreshScanStatus();
     setTimeout(() => $('#aiInput').focus(), 60);
   }
   if (view === 'document') setTimeout(() => $('#docEditor').focus(), 60);

@@ -104,16 +104,20 @@ async function findOldCopies() {
       continue;
     }
     for (const name of entries) {
-      if (!/^Sludge.*\.app$/i.test(name)) continue;
+      // Marginalia was this app's previous name; a leftover copy of it is
+      // exactly the sort of stale bundle worth offering to clear out.
+      if (!/^(Sludge|Marginalia).*\.app$/i.test(name)) continue;
       const full = path.join(dir, name);
       if (full === running) continue;
       const version = await bundleVersion(full);
-      if (!version || compareVersions(version, current) >= 0) continue;
+      if (!version) continue;
+      const renamed = /^Marginalia/i.test(name);
+      if (!renamed && compareVersions(version, current) >= 0) continue;
       let size = 0;
       try {
         size = (await fsp.stat(full)).size;
       } catch { /* size is cosmetic */ }
-      found.push({ path: full, version, size });
+      found.push({ path: full, version, size, renamed });
     }
   }
   return found;
@@ -127,7 +131,9 @@ async function offerCleanup(win) {
   const old = await findOldCopies();
   if (!old.length) return { removed: 0 };
 
-  const list = old.map((o) => `  •  ${o.path.replace(os.homedir(), '~')}  (v${o.version})`).join('\n');
+  const list = old
+    .map((o) => `  •  ${o.path.replace(os.homedir(), '~')}  (v${o.version}${o.renamed ? ', old name' : ''})`)
+    .join('\n');
   const { response } = await dialog.showMessageBox(win, {
     type: 'question',
     buttons: ['Move to Trash', 'Keep them'],

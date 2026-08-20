@@ -18,6 +18,7 @@ It's a PDF app. Yes, basic. But:
 - **Notes that stay together** — highlighting, pins, tags, search, export. Everything you'd expect.
 - **A chapter finder that actually works** — even when the PDF has no outline, it reads the book's own contents pages.
 - **A local AI that has read what you've read** — ask about the textbook, ask about *your own notes*, and it tells you which is which.
+- **Let it read the whole book once** — a one-off scan writes a summary of every section, so broad questions stop getting vague answers.
 - **Don't want to read?** It reads to you, highlighting each word as it goes.
 - **Night and day mode**, obviously — and it can invert the page itself.
 - **Brainrot mode.** A textbook can't hold your attention on its own, so there's Minecraft parkour and Subway Surfers running alongside it.
@@ -76,8 +77,8 @@ It's a PDF app. Yes, basic. But:
   so a new pack needs a published file rather than a new build of the app.
 
 **It knows who you are**
-- Four questions on first launch — your name, what you're reading for, how you want
-  answers, anything else worth knowing. Stored locally, folded into the model's prompt.
+- Three questions on first launch — your name, what you're reading for, and how you want
+  answers. Stored locally, folded into the model's prompt.
 - After that it greets you and offers the book you were in the middle of.
 - Change your answers any time from **Sludge → About You** (`⌘,`).
 
@@ -87,11 +88,25 @@ It's a PDF app. Yes, basic. But:
 - Once you're running the new version it finds older copies still lying around and
   offers to move them to the Trash — always asking, always the Trash, never a delete.
 
+**Let it read the whole document (optional)**
+- Retrieval finds the right paragraph, which answers narrow questions well. It can't
+  answer *"what is this chapter arguing?"* — no single paragraph holds that.
+- The full scan reads every section once and stores a summary and key terms for each.
+  Those summaries then ride along as higher-altitude evidence, and the section you're
+  currently on is always included, so "this chapter" means the one in front of you.
+- It runs in the background, is cancellable, saves as it goes, and is done once per book.
+  Roughly 8 minutes for an 800-page textbook with a 3B model, ~25 with an 8B one.
+- **It deliberately offers a bigger model than chat uses.** A 3B model handed a section
+  of a textbook starts answering the exercises printed inside it instead of summarising
+  them — that's not something prompt wording fixes at that size. The scan is a one-time
+  background job, so it can afford the slower, better model; chat stays fast.
+
 **Ask a local AI**
 - Ranks the document's pages *and* your own notes against your question, then answers from what it found.
 - It always distinguishes the two: *"your note on p. 112 says…"* versus a page citation `[p. 112]`.
 - Citations are clickable, and a sources drawer under each answer shows exactly what the model was given.
 - Runs through [Ollama](https://ollama.com) on your machine. No API key, no network.
+- Answer style — short, explained, or quiz-me — switches from the **AI** tab at any time.
 
 **Everything stays local**
 - Highlights and notes save to a plain `<pdf name>.notes.json` file *next to the PDF*.
@@ -203,6 +218,8 @@ src/main/        Electron main process
   retrieval.js     BM25 ranking over pages and notes (no dependencies)
   ollama.js        local model discovery, warm-up, grounded prompt, streaming
   media.js         focus-video packs: catalog, streaming download, install state
+  digest.js        the full document scan: section planning, summaries, caching
+  updater.js       release checking and clearing out superseded copies
 src/renderer/    the UI — plain ES modules, no framework, no build step
   js/viewer.js     pdf.js loading, virtualised pages, text + annotation layers
   js/annotations.js  selection → normalised rects, highlights, pins, editor
@@ -214,6 +231,7 @@ src/renderer/    the UI — plain ES modules, no framework, no build step
   js/search.js     full-text search and on-page hit mapping
   js/ai.js         chat panel, streaming, citations, sources
   js/focus.js      the video strip and pack picker
+  js/scan.js       the full-scan offer, progress, and state
 ```
 
 Highlight geometry is stored as fractions of the page box, so annotations stay put at

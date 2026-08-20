@@ -121,7 +121,8 @@ function bestExcerpt(text, query, maxChars = 900) {
 const NOTE_INTENT = /\b(my|our)\s+(notes?|highlights?|comments?|annotations?)\b|\bwhat did i\b|\bi (wrote|noted|highlighted|marked)\b|\bmy own\b/i;
 const META_INTENT = /\bwho\s+(wrote|authored|is the author)\b|\bauthors?\b|\bwhat (book|textbook|document) is this\b|\btitle of (this|the)\b|\bedition\b|\bpublish(er|ed)\b|\bcopyright\b|\bwhat is this (book|pdf|document)\b/i;
 
-function retrieve({ query, pages = [], annotations = [], pageLimit = 6, noteLimit = 5 }) {
+function retrieve({ query, pages = [], annotations = [], digest = null, currentPage = null,
+                   pageLimit = 6, noteLimit = 5, overviewLimit = 3 }) {
   const pageDocs = pages
     .filter((p) => p && p.text && p.text.trim().length > 40)
     .map((p) => ({ id: `p${p.page}`, text: p.text, meta: { page: p.page } }));
@@ -171,7 +172,43 @@ function retrieve({ query, pages = [], annotations = [], pageLimit = 6, noteLimi
     pageHits = front.concat(pageHits).slice(0, pageLimit + front.length);
   }
 
+  // Section summaries from a full scan, when one exists. These answer the broad
+  // questions no single page contains the answer to.
+  let overviewBlocks = [];
+  if (digest && Array.isArray(digest.blocks) && digest.blocks.length) {
+    const usable = digest.blocks.filter((b) => b.summary && b.summary.trim());
+    const overviewDocs = usable.map((b, i) => ({
+      id: `ov${i}`,
+      text: `${b.chapter || ''} ${b.summary} ${(b.terms || []).join(' ')}`,
+      meta: b
+    }));
+
+    const hits = overviewDocs.length ? new Bm25(overviewDocs).search(query, overviewLimit) : [];
+    overviewBlocks = hits.map((h) => ({ ...h.doc.meta, score: Number(h.score.toFixed(3)) }));
+
+    // Broad questions — "what is this chapter arguing?" — often share no words
+    // with the summary that answers them, so lexical ranking alone finds
+    // nothing. The section being read is always relevant context, so it goes in
+    // regardless of score.
+    if (currentPage) {
+      const here = usable.find((b) => currentPage >= b.from && currentPage <= b.to);
+      if (here && !overviewBlocks.some((b) => b.from === here.from && b.to === here.to)) {
+        overviewBlocks.unshift({ ...here, score: 0, current: true });
+      }
+    }
+    overviewBlocks = overviewBlocks.slice(0, overviewLimit + 1);
+  }
+
   return {
+    overview: overviewBlocks.map((b) => ({
+      from: b.from,
+      to: b.to,
+      chapter: b.chapter || null,
+      summary: b.summary,
+      terms: b.terms || [],
+      current: !!b.current,
+      score: b.score
+    })),
     pages: pageHits.map((h) => ({
       page: h.doc.meta.page,
       score: Number(h.score.toFixed(3)),

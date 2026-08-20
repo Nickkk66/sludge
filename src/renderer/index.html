@@ -141,6 +141,14 @@
       <span>Model</span>
       <select id="modelSelect"><option>Checking…</option></select>
     </label>
+    <label class="ribbon-field">
+      <span>Answers</span>
+      <select id="answerStyle">
+        <option value="brief">Short and direct</option>
+        <option value="explain">Explain it</option>
+        <option value="study">Study mode — quiz me</option>
+      </select>
+    </label>
     <div class="ai-status" id="aiStatus"><i></i> checking local AI…</div>
     <div class="rb-spacer"></div>
     <div class="ribbon-hint">Runs fully offline through Ollama. It only reads this PDF and your notes.</div>
@@ -370,6 +378,7 @@ This saves next to your PDF, with your highlights."></textarea>
 
       <!-- ai -->
       <div class="panel-view" data-view="ai">
+        <div id="scanOffer" class="scan-offer" hidden></div>
         <div id="aiThread">
           <div class="ai-intro">
             <h3>Ask about this document</h3>
@@ -474,11 +483,11 @@ This saves next to your PDF, with your highlights."></textarea>
         </svg>
       </div>
       <h2>Welcome to Sludge</h2>
-      <p class="onboard-intro">Four quick questions. They stay on this machine and only get used to make the local AI's answers fit you better.</p>
+      <p class="onboard-intro">Three quick questions. They stay on this machine and only get used to make the local AI's answers fit you better.</p>
 
       <label class="onboard-field">
         <span>What should I call you?</span>
-        <input id="obName" placeholder="Nick" maxlength="40" />
+        <input id="obName" placeholder="Gilbert" maxlength="40" />
       </label>
 
       <label class="onboard-field">
@@ -493,11 +502,6 @@ This saves next to your PDF, with your highlights."></textarea>
           <option value="explain" selected>Explain it — a bit of reasoning</option>
           <option value="study">Study mode — quiz me and push back</option>
         </select>
-      </label>
-
-      <label class="onboard-field">
-        <span>Anything else worth knowing?</span>
-        <textarea id="obNotes" rows="2" placeholder="I get lost in long paragraphs. Keep it concrete." maxlength="300"></textarea>
       </label>
     </div>
     <div class="modal-foot">

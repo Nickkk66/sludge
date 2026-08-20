@@ -37,6 +37,9 @@ export async function refreshAiStatus({ autostart = true } = {}) {
     const chosen = info.models.some((m) => m.name === saved) ? saved : info.suggested;
     state.aiModel = chosen;
 
+    // The scan picker needs the same list, ranked its own way.
+    const { setModels } = await import('./scan.js');
+    setModels(info.models);
     const ranked = [...info.models].sort((a, b) => (a.size || 0) - (b.size || 0));
     select.replaceChildren(...ranked.map((m) => el('option', {
       value: m.name,
@@ -141,6 +144,7 @@ export async function ask(question) {
       id: a.id, page: a.page, type: a.type, note: a.note, quote: a.quote, tags: a.tags, color: a.color
     })),
     history: state.aiHistory.slice(-4),
+    currentPage: state.currentPage,
     profile: profilePrompt(),
     readerName: profile.name || null
   });

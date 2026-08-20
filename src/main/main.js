@@ -9,6 +9,7 @@ const ollama = require('./ollama');
 const { retrieve } = require('./retrieval');
 const media = require('./media');
 const updater = require('./updater');
+const digest = require('./digest');
 const buildMenu = require('./menu');
 
 let win = null;
@@ -255,11 +256,47 @@ handle('ai:warm', async (model) => ollama.warm(model));
 
 handle('ai:rewrite', async (payload) => ollama.rewrite(payload));
 
-handle('ai:retrieve', async ({ query, docId, annotations }) => {
+handle('ai:retrieve', async ({ query, docId, annotations, currentPage }) => {
   const index = await store.getTextIndex(docId);
   const pages = (index && index.pages) || [];
-  return retrieve({ query, pages, annotations: annotations || [] });
+  const scan = await digest.load(docId);
+  return retrieve({ query, pages, annotations: annotations || [], digest: scan, currentPage });
 });
+
+/* -------------------------------------------------------- full scan */
+
+handle('scan:status', async ({ docId, pages, chapters, params }) => {
+  const existing = await digest.load(docId);
+  const est = digest.estimate(pages || [], chapters || [], params);
+  return {
+    scanned: !!(existing && existing.complete),
+    partial: !!(existing && !existing.complete && existing.blocks.length),
+    blocks: existing ? existing.blocks.length : 0,
+    builtWith: existing ? existing.model : null,
+    built: existing ? existing.built : null,
+    running: digest.isRunning(docId),
+    estimate: est
+  };
+});
+
+handle('scan:clear', async (docId) => digest.remove(docId));
+
+ipcMain.on('scan:start', async (event, { docId, model, docName, pages, chapters }) => {
+  const send = (channel, payload) => {
+    if (!event.sender.isDestroyed()) event.sender.send(channel, { docId, ...payload });
+  };
+  try {
+    const result = await digest.build(
+      { docId, model, docName, pages: pages || [], chapters: chapters || [] },
+      (p) => send('scan:progress', p)
+    );
+    send('scan:done', { ok: true, complete: result.complete, blocks: result.blocks.length });
+  } catch (err) {
+    send('scan:done', { ok: false, error: String((err && err.message) || err) });
+  }
+});
+
+ipcMain.on('scan:cancel', (_e, docId) => digest.cancel(docId));
 
 // Streaming answers use send/on rather than handle so tokens arrive live.
 // Greetings and "what can you do" are not questions about the document.
@@ -283,7 +320,7 @@ function smallTalkReply(query, docName, noteCount, readerName) {
     `I only answer from what's actually in the document, so be as specific as you like.`;
 }
 
-ipcMain.on('ai:ask', async (event, { streamId, query, docId, docName, model, annotations, history, profile, readerName }) => {
+ipcMain.on('ai:ask', async (event, { streamId, query, docId, docName, model, annotations, history, profile, readerName, currentPage }) => {
   const reply = (channel, payload) => {
     if (!event.sender.isDestroyed()) event.sender.send(channel, { streamId, ...payload });
   };
@@ -294,10 +331,11 @@ ipcMain.on('ai:ask', async (event, { streamId, query, docId, docName, model, ann
     }
     const index = await store.getTextIndex(docId);
     const pages = (index && index.pages) || [];
-    const evidence = retrieve({ query, pages, annotations: annotations || [] });
+    const scan = await digest.load(docId);
+    const evidence = retrieve({ query, pages, annotations: annotations || [], digest: scan, currentPage });
     reply('ai:evidence', { evidence });
 
-    if (!evidence.pages.length && !evidence.notes.length) {
+    if (!evidence.pages.length && !evidence.notes.length && !(evidence.overview || []).length) {
       reply('ai:done', {
         text: "I couldn't find anything in this document or your notes that matches that. Try naming a term, person, or event the way the book would phrase it.",
         empty: true

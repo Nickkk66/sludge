@@ -20,7 +20,6 @@ export const profile = {
   name: '',
   purpose: '',
   style: 'explain',
-  notes: '',
   onboarded: false
 };
 
@@ -29,7 +28,6 @@ export function loadProfile(settings) {
     name: settings.profileName || '',
     purpose: settings.profilePurpose || '',
     style: settings.profileStyle || 'explain',
-    notes: settings.profileNotes || '',
     onboarded: settings.onboarded === true
   });
   return profile;
@@ -40,7 +38,6 @@ async function saveProfile() {
     profileName: profile.name,
     profilePurpose: profile.purpose,
     profileStyle: profile.style,
-    profileNotes: profile.notes,
     onboarded: true
   });
   profile.onboarded = true;
@@ -53,7 +50,6 @@ export function profilePrompt() {
   if (profile.name) bits.push(`The reader's name is ${profile.name}.`);
   if (profile.purpose) bits.push(`They are reading this for: ${profile.purpose}.`);
   if (STYLE_HINT[profile.style]) bits.push(STYLE_HINT[profile.style]);
-  if (profile.notes) bits.push(`They also said: "${profile.notes}"`);
   return bits.length ? bits.join(' ') : null;
 }
 
@@ -64,7 +60,6 @@ export function showOnboarding() {
   $('#obName').value = profile.name;
   $('#obPurpose').value = profile.purpose;
   $('#obStyle').value = profile.style;
-  $('#obNotes').value = profile.notes;
   modal.classList.remove('hidden');
   setTimeout(() => $('#obName').focus(), 60);
 }
@@ -73,13 +68,27 @@ function closeOnboarding() {
   $('#onboardModal').classList.add('hidden');
 }
 
+/** Change how answers come back, without reopening the first-run questions. */
+export async function setAnswerStyle(style) {
+  if (!STYLE_HINT[style]) return;
+  profile.style = style;
+  state.settings = await window.api.settings.set({ profileStyle: style });
+  emit('profile:changed', profile);
+}
+
 export function initProfile() {
+  const styleSelect = $('#answerStyle');
+  styleSelect.value = profile.style;
+  styleSelect.addEventListener('change', (e) => setAnswerStyle(e.target.value));
+  // Keep the ribbon control and the first-run answer in step.
+  emit('profile:ready', profile);
+
   $('#obSave').addEventListener('click', async () => {
     profile.name = $('#obName').value.trim();
     profile.purpose = $('#obPurpose').value.trim();
     profile.style = $('#obStyle').value;
-    profile.notes = $('#obNotes').value.trim();
     await saveProfile();
+    $('#answerStyle').value = profile.style;
     closeOnboarding();
     renderGreeting();
   });
