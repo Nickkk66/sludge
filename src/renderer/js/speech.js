@@ -2,6 +2,7 @@ import { $, el, toast } from './util.js';
 import { state, emit, on } from './state.js';
 import { getPageEl, renderPage, goToPage, refreshAnnotations, viewerEl } from './viewer.js';
 import { flattenTextLayer, rectsFor, splitSentences } from './textmap.js';
+import { pickVoices, needsBetterVoices, allEnglish } from './voices.js';
 
 /**
  * Read-aloud.
@@ -13,7 +14,10 @@ import { flattenTextLayer, rectsFor, splitSentences } from './textmap.js';
 
 const synth = window.speechSynthesis;
 
-let voices = [];
+let voices = [];        // the four curated choices
+let rawVoices = [];     // everything the system offers
+let spokenWords = 0;    // for measuring the reader's actual pace
+let pageStartedAt = 0;
 let mapped = null;        // flattened text layer for the page being read
 let sentences = [];       // sentences of that page, with offsets
 let index = 0;            // sentence being spoken
@@ -34,30 +38,38 @@ export const speech = {
 /* ------------------------------------------------------------ voices */
 
 function loadVoices() {
-  const all = synth.getVoices() || [];
-  // Local voices only — anything network-backed defeats the point.
-  voices = all.filter((v) => v.localService !== false);
-  if (!voices.length) voices = all;
-  voices.sort((a, b) => {
-    const en = (v) => (/^en/i.test(v.lang) ? 0 : 1);
-    return en(a) - en(b) || a.name.localeCompare(b.name);
-  });
+  const all = (synth.getVoices() || []).filter((v) => v.localService !== false);
+  rawVoices = all.length ? all : (synth.getVoices() || []);
+  voices = pickVoices(rawVoices);
   return voices;
 }
 
+/** The four curated choices: US/UK × male/female. */
 export function getVoices() {
   if (!voices.length) loadVoices();
   return voices;
 }
 
+/** Every usable English voice, for readers who want the full list. */
+export function getAllVoices() {
+  if (!rawVoices.length) loadVoices();
+  return allEnglish(rawVoices);
+}
+
+/** True when the Mac only has the old robotic voices installed. */
+export function voicesAreBasic() {
+  if (!voices.length) loadVoices();
+  return needsBetterVoices(voices);
+}
+
 function pickVoice() {
-  const list = getVoices();
-  if (!list.length) return null;
-  const saved = list.find((v) => v.voiceURI === speech.voiceURI);
+  const all = getAllVoices();
+  const saved = all.find((v) => v.voiceURI === speech.voiceURI);
   if (saved) return saved;
-  // Prefer a natural-sounding English voice when one is installed.
-  const nice = list.find((v) => /(samantha|ava|allison|serena|daniel|karen|siri)/i.test(v.name) && /^en/i.test(v.lang));
-  return nice || list.find((v) => /^en/i.test(v.lang)) || list[0];
+  const curated = getVoices();
+  // Default to the best-quality curated voice available.
+  const best = [...curated].sort((a, b) => b.tier.rank - a.tier.rank)[0];
+  return best ? best.voice : (all[0] || null);
 }
 
 /* ------------------------------------------------------------ page prep */
@@ -156,6 +168,13 @@ function speakCurrent() {
   wordAt = [0, 0];
   paintReading(sentence, 0, 0);
   keepInView(sentence);
+  emit('speech:sentence', {
+    text: sentence.text,
+    index,
+    total: sentences.length,
+    page: readingPage,
+    remainingMs: estimateRemaining(sentence, 0)
+  });
   // The scroll above can trigger a re-render; repaint once it has settled,
   // keeping whatever word the voice has reached by then.
   requestAnimationFrame(() => setTimeout(() => {
@@ -164,13 +183,21 @@ function speakCurrent() {
 
   utterance.onboundary = (e) => {
     if (e.name && e.name !== 'word') return;
-    const at = sentence.start + (e.charIndex || 0);
-    const len = e.charLength || wordLengthAt(sentence.text, e.charIndex || 0);
+    const local = e.charIndex || 0;
+    const len = e.charLength || wordLengthAt(sentence.text, local);
+    const at = sentence.start + local;
     paintReading(sentence, at, at + len);
+    emit('speech:word', {
+      text: sentence.text,
+      wordStart: local,
+      wordEnd: local + len,
+      remainingMs: estimateRemaining(sentence, local)
+    });
   };
 
   utterance.onend = () => {
     if (stopping) return;
+    spokenWords += countWords(sentence.text);
     index += 1;
     if (index < sentences.length) speakCurrent();
     else advancePage();
@@ -191,6 +218,22 @@ function wordLengthAt(text, at) {
   return m ? m[0].length : 1;
 }
 
+const countWords = (t) => (String(t).match(/\S+/g) || []).length;
+
+/**
+ * Time left on this page. Starts from a nominal speaking rate and switches to
+ * the reader's measured pace once there's enough of it to trust.
+ */
+function estimateRemaining(sentence, localChar) {
+  let words = countWords(sentence.text.slice(localChar));
+  for (let i = index + 1; i < sentences.length; i++) words += countWords(sentences[i].text);
+
+  const elapsed = pageStartedAt ? Date.now() - pageStartedAt : 0;
+  const measured = spokenWords > 25 && elapsed > 4000 ? (spokenWords / (elapsed / 60000)) : null;
+  const wpm = measured || 165 * speech.rate;
+  return Math.round((words / Math.max(40, wpm)) * 60000);
+}
+
 async function advancePage() {
   clearReadingHighlight();
   const next = readingPage + 1;
@@ -203,6 +246,8 @@ async function advancePage() {
   const ok = await preparePage(next);
   if (!speech.playing) return;
   index = 0;
+  spokenWords = 0;
+  pageStartedAt = Date.now();
   if (ok) speakCurrent();
   else advancePage();   // blank or image-only page
 }
@@ -228,6 +273,8 @@ export async function play(fromPage) {
     return;
   }
   index = 0;
+  spokenWords = 0;
+  pageStartedAt = Date.now();
   speech.playing = true;
   speech.paused = false;
   emit('speech:changed');

@@ -1,7 +1,7 @@
 {
   "name": "sludge",
   "productName": "Sludge",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Offline PDF reader that reads to you, takes your notes, answers questions locally \u2014 and plays brainrot in the background.",
   "main": "src/main/main.js",
   "author": "Nickkk66",
@@ -33,8 +33,7 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ],
       "icon": "assets/icon.icns"
     }

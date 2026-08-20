@@ -51,8 +51,20 @@ It's a PDF app. Yes, basic. But:
 **Read it aloud**
 - Plays the page through your Mac's offline voices, highlighting the sentence it's on and
   the word it's saying, turning pages as it goes.
+- A **reading panel** shows the current sentence large, lighting each word as it's spoken,
+  with the time left on the page. Drag it anywhere — it snaps to six positions and can sit
+  right on top of the focus video. Double-click its grip to send it back to the bottom.
 - Speed and voice live in the top bar; pause any time to highlight and annotate, then resume.
 - Space plays and pauses; `⌘R` starts it.
+
+**About the voices**
+- The voice list is narrowed to four — American and British, male and female — rather than
+  the 180 your Mac reports, most of which are novelty voices like Bells and Zarvox.
+- macOS keeps its natural-sounding voices behind a download. Sludge detects when only the
+  old robotic ones are installed, says so, and walks you through adding the good ones
+  (System Settings → Accessibility → Spoken Content → Manage Voices → anything marked
+  **Premium**). It picks the highest-quality voice available for each slot automatically.
+- "Show every English voice…" is there if you want the unfiltered list.
 
 ![Read-aloud highlighting a sentence while notes are written alongside](docs/screenshot-reading.png)
 

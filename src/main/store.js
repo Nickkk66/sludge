@@ -18,6 +18,8 @@ const DEFAULT_SETTINGS = {
   autoNote: true,
   invert: false,
   focusDock: 'bottom',
+  teleprompter: true,
+  teleprompterSpot: 'bottom',
   focusHeight: 320,
   focusWidth: 380,
   zoom: 1,

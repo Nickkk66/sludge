@@ -13,7 +13,9 @@ import { showLibrary, hideLibrary, makeCover, renderRecent } from './library.js'
 import { initAi, refreshAiStatus, resetAiThread } from './ai.js';
 import { exportNotes } from './exporter.js';
 import { initSpeech, speech, play as speechPlay, pause as speechPause, stop as speechStop,
-         toggle as speechToggle, skip as speechSkip, setRate, setVoice, getVoices, readingState } from './speech.js';
+         toggle as speechToggle, skip as speechSkip, setRate, setVoice, getVoices, getAllVoices,
+         voicesAreBasic, readingState } from './speech.js';
+import { describeVoice } from './voices.js';
 import { initDocNotes, getMarkdown, setMarkdown, togglePreview, exportDocument } from './docnotes.js';
 import { initFocus, restoreFocus, openPicker } from './focus.js';
 import { initProfile, loadProfile, showOnboarding, renderGreeting, profile } from './profile.js';
@@ -42,6 +44,7 @@ async function boot() {
   initProfile();
   initScan();
   wireSpeechBar();
+  wireTeleprompter();
   wireDocument();
   wireUpdates();
   loadProfile(state.settings);
@@ -154,6 +157,16 @@ function updateSidecarHint(path) {
   if (!path) return;
   const inAppStorage = path.includes('Application Support');
   if (inAppStorage) toast('Notes are saved in app storage — the PDF\'s folder is not writable.');
+}
+
+/** Return to the greeting without closing the document you have open. */
+async function showStartScreen() {
+  hideLibrary();
+  $('#welcome').hidden = false;
+  // Only offer "back" when there is something to go back to.
+  $('#welcomeBack').hidden = !state.pdf;
+  await renderGreeting();
+  await renderRecent();
 }
 
 async function closeDocument() {
@@ -385,9 +398,14 @@ function wireChrome() {
     const path = await window.api.pickPdf();
     if (path) openDocument(path);
   };
-  ['#btnOpen', '#welcomeOpen', '#tabAdd', '#libraryAdd'].forEach((sel) =>
+  ['#btnOpen', '#welcomeOpen', '#libraryAdd'].forEach((sel) =>
     $(sel).addEventListener('click', async () => { hideLibrary(); await open(); }));
 
+  // The + shows the start screen rather than a file dialog — "Open a PDF" is
+  // already sitting on it, and the greeting is the better landing place.
+  $('#tabAdd').addEventListener('click', showStartScreen);
+
+  $('#welcomeBack').addEventListener('click', () => { $('#welcome').hidden = true; });
   ['#btnLibrary', '#btnLibraryTop', '#welcomeLibrary'].forEach((sel) =>
     $(sel).addEventListener('click', showLibrary));
   $('#libraryClose').addEventListener('click', hideLibrary);
@@ -532,9 +550,41 @@ function wireSpeechBar() {
   });
   rate.addEventListener('change', () => setRate(rate.value));
 
-  $('#spVoice').addEventListener('change', (e) => setVoice(e.target.value));
+  $('#spVoice').addEventListener('change', (e) => {
+    if (e.target.value === '__all__') {
+      showAllVoices = true;
+      fillVoices();
+      return;
+    }
+    setVoice(e.target.value);
+  });
   // Populate up front so the picker is ready the first time the bar appears.
   fillVoices();
+
+  $('#spVoiceWarn').addEventListener('click', openVoiceGuide);
+  $('#voiceClose').addEventListener('click', () => $('#voiceModal').classList.add('hidden'));
+  $('#voiceModal').addEventListener('click', (e) => {
+    if (e.target.id === 'voiceModal') $('#voiceModal').classList.add('hidden');
+  });
+  $('#voiceOpenSettings').addEventListener('click', () => window.api.openVoiceSettings());
+  $('#voiceRecheck').addEventListener('click', () => {
+    fillVoices();
+    if (voicesAreBasic()) toast('Still only the basic voices — the download may not have finished.');
+    else {
+      toast('Better voices found.');
+      $('#voiceModal').classList.add('hidden');
+    }
+  });
+
+  $('#spShowText').addEventListener('change', async (e) => {
+    teleprompterOn = e.target.checked;
+    $('#teleprompter').hidden = !(teleprompterOn && (speech.playing || speech.paused));
+    state.settings = await window.api.settings.set({ teleprompter: teleprompterOn });
+  });
+  $('#tpClose').addEventListener('click', () => {
+    $('#spShowText').checked = false;
+    $('#spShowText').dispatchEvent(new Event('change'));
+  });
   $('#spFollow').addEventListener('change', (e) => { speech.followScroll = e.target.checked; });
 
   on('speech:voices', fillVoices);
@@ -553,17 +603,204 @@ function wireSpeechBar() {
   });
 }
 
+let showAllVoices = false;
+let teleprompterOn = true;
+
 function fillVoices() {
-  const list = getVoices();
   const select = $('#spVoice');
-  if (!list.length) {
+  const curated = getVoices();
+  const basic = voicesAreBasic();
+  $('#spVoiceWarn').hidden = !basic;
+
+  if (showAllVoices) {
+    const all = getAllVoices();
+    select.replaceChildren(...all.map((v) => el('option', {
+      value: v.voiceURI,
+      selected: v.voiceURI === speech.voiceURI
+    }, `${v.name} (${v.lang})`)));
+    return;
+  }
+
+  if (!curated.length) {
     select.replaceChildren(el('option', {}, 'System default'));
     return;
   }
-  select.replaceChildren(...list.map((v) => el('option', {
-    value: v.voiceURI,
-    selected: v.voiceURI === speech.voiceURI
-  }, `${v.name} (${v.lang})`)));
+
+  // Four choices — US and UK, male and female — rather than 180 system voices.
+  select.replaceChildren(
+    ...curated.map((c) => el('option', {
+      value: c.voice.voiceURI,
+      selected: c.voice.voiceURI === speech.voiceURI
+    }, describeVoice(c))),
+    el('option', { value: '__all__' }, 'Show every English voice…')
+  );
+
+  // Without a saved choice, start on the best one available.
+  if (!speech.voiceURI && curated.length) {
+    const best = [...curated].sort((a, b) => b.tier.rank - a.tier.rank)[0];
+    select.value = best.voice.voiceURI;
+  }
+}
+
+function openVoiceGuide() {
+  $('#voiceModal').classList.remove('hidden');
+}
+
+/* ---------------- teleprompter ---------------- */
+
+const fmtClock = (ms) => {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const m = Math.floor(total / 60);
+  const sec = String(total % 60).padStart(2, '0');
+  return `${m}:${sec}`;
+};
+
+/** Render the sentence as individual words so one can be lit at a time. */
+function renderTeleprompterLine(text) {
+  const line = $('#tpLine');
+  const parts = [];
+  const re = /\S+/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) parts.push(document.createTextNode(text.slice(last, m.index)));
+    parts.push(el('span', { class: 'w', 'data-at': String(m.index), 'data-end': String(m.index + m[0].length) }, m[0]));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(document.createTextNode(text.slice(last)));
+  line.replaceChildren(...parts);
+}
+
+function markTeleprompterWord(start, end) {
+  for (const w of $$('#tpLine .w')) {
+    const at = Number(w.dataset.at);
+    const wEnd = Number(w.dataset.end);
+    w.classList.toggle('now', at < end && wEnd > start);
+    w.classList.toggle('said', wEnd <= start);
+  }
+}
+
+/* The six places it can land. Bottom is home. */
+const TP_SPOTS = ['bottom', 'bottom-left', 'bottom-right', 'top', 'top-left', 'top-right'];
+
+function setTeleprompterSpot(spot) {
+  const next = TP_SPOTS.includes(spot) ? spot : 'bottom';
+  const tp = $('#teleprompter');
+  tp.dataset.spot = next;
+  // Clear any inline offsets left over from a drag.
+  tp.style.left = tp.style.top = tp.style.right = tp.style.bottom = '';
+  window.api.settings.set({ teleprompterSpot: next }).catch(() => {});
+}
+
+/** Where a spot would put the panel, used for the drag preview and snapping. */
+function spotRect(spot, w, h) {
+  const pad = 20;
+  const bottomY = window.innerHeight - h - 46;
+  const topY = 210;
+  const midX = (window.innerWidth - w) / 2;
+  const rightX = window.innerWidth - w - pad;
+  const map = {
+    bottom: [midX, bottomY],
+    'bottom-left': [pad, bottomY],
+    'bottom-right': [rightX, bottomY],
+    top: [midX, topY],
+    'top-left': [pad, topY],
+    'top-right': [rightX, topY]
+  };
+  const [x, y] = map[spot] || map.bottom;
+  return { x, y, w, h };
+}
+
+function nearestSpot(x, y, w, h) {
+  let best = 'bottom';
+  let bestDist = Infinity;
+  for (const spot of TP_SPOTS) {
+    const r = spotRect(spot, w, h);
+    const dx = r.x - x;
+    const dy = r.y - y;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) { bestDist = d; best = spot; }
+  }
+  return best;
+}
+
+function wireTeleprompterDrag() {
+  const tp = $('#teleprompter');
+  const ghost = $('#tpGhost');
+  let dragging = false;
+  let grabX = 0;
+  let grabY = 0;
+  let target = 'bottom';
+
+  $('#tpGrip').addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const r = tp.getBoundingClientRect();
+    dragging = true;
+    grabX = e.clientX - r.left;
+    grabY = e.clientY - r.top;
+    tp.classList.add('dragging');
+    tp.dataset.spot = 'free';
+    tp.style.left = `${r.left}px`;
+    tp.style.top = `${r.top}px`;
+    tp.style.right = tp.style.bottom = 'auto';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const w = tp.offsetWidth;
+    const h = tp.offsetHeight;
+    const x = Math.max(8, Math.min(window.innerWidth - w - 8, e.clientX - grabX));
+    const y = Math.max(8, Math.min(window.innerHeight - h - 8, e.clientY - grabY));
+    tp.style.left = `${x}px`;
+    tp.style.top = `${y}px`;
+
+    target = nearestSpot(x, y, w, h);
+    const r = spotRect(target, w, h);
+    ghost.hidden = false;
+    ghost.style.left = `${r.x}px`;
+    ghost.style.top = `${r.y}px`;
+    ghost.style.width = `${w}px`;
+    ghost.style.height = `${h}px`;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    tp.classList.remove('dragging');
+    ghost.hidden = true;
+    setTeleprompterSpot(target);
+  });
+
+  // Double-clicking the grip sends it home.
+  $('#tpGrip').addEventListener('dblclick', () => setTeleprompterSpot('bottom'));
+}
+
+function wireTeleprompter() {
+  teleprompterOn = state.settings.teleprompter !== false;
+  $('#spShowText').checked = teleprompterOn;
+  setTeleprompterSpot(state.settings.teleprompterSpot || 'bottom');
+  wireTeleprompterDrag();
+
+  on('speech:sentence', ({ text, index, total, page, remainingMs }) => {
+    if (!teleprompterOn) return;
+    $('#teleprompter').hidden = false;
+    renderTeleprompterLine(text);
+    $('#tpMeta').textContent = `p. ${page} · sentence ${index + 1} of ${total}`;
+    $('#tpBar').style.width = `${total ? ((index) / total) * 100 : 0}%`;
+    $('#tpLeft').textContent = `${fmtClock(remainingMs)} left on this page`;
+  });
+
+  on('speech:word', ({ wordStart, wordEnd, remainingMs }) => {
+    if (!teleprompterOn) return;
+    markTeleprompterWord(wordStart, wordEnd);
+    $('#tpLeft').textContent = `${fmtClock(remainingMs)} left on this page`;
+  });
+
+  on('speech:changed', () => {
+    const active = speech.playing || speech.paused;
+    $('#teleprompter').hidden = !(teleprompterOn && active);
+  });
 }
 
 /* ------------------------------------------------------------ document */

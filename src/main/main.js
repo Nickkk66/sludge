@@ -12,6 +12,10 @@ const updater = require('./updater');
 const digest = require('./digest');
 const buildMenu = require('./menu');
 
+// Without this the dock tile, the menu bar and the About panel all say
+// "Electron" when the app is run unpackaged.
+app.setName('Sludge');
+
 let win = null;
 let rendererReady = false;
 const activeDownloads = new Map();
@@ -29,6 +33,7 @@ const activeStreams = new Map();
 
 function createWindow() {
   win = new BrowserWindow({
+    title: 'Sludge',
     width: 1440,
     height: 940,
     minWidth: 960,
@@ -242,6 +247,12 @@ handle('update:open', async (url) => { updater.openReleasePage(url); return true
 handle('update:oldCopies', async () => updater.findOldCopies());
 handle('update:cleanup', async () => updater.offerCleanup(win));
 handle('app:version', async () => app.getVersion());
+
+// Deep-link into the pane where macOS hides its better voices.
+handle('voices:openSettings', async () => {
+  await shell.openExternal('x-apple.systempreferences:com.apple.preference.universalaccess?SpokenContent');
+  return true;
+});
 
 handle('theme:set', async (theme) => {
   nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark';

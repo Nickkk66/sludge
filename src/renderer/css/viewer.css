@@ -285,3 +285,74 @@ body.resizing-video #videostrip { pointer-events: auto; }
 .resume-text b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resume-text small { color: var(--fg-3); font-size: 11.5px; }
 .resume-go { color: var(--accent); font-size: 12.5px; font-weight: 600; flex: none; }
+
+/* ---------- reading teleprompter ---------- */
+/* Fixed to the window rather than the page area, so it can float over the
+   focus video as well as the document. */
+#teleprompter {
+  position: fixed; z-index: 120;
+  width: min(760px, calc(100vw - 48px));
+  background: rgba(20, 22, 26, .94);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 16px 46px rgba(0,0,0,.55);
+  backdrop-filter: blur(14px);
+  padding: 4px 20px 12px;
+}
+html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
+#teleprompter.dragging { transition: none; opacity: .92; cursor: grabbing; }
+
+/* Snap positions. Bottom is the default and where it returns on reset. */
+#teleprompter[data-spot="bottom"]       { left: 50%; transform: translateX(-50%); bottom: 46px; top: auto; }
+#teleprompter[data-spot="bottom-left"]  { left: 20px; transform: none; bottom: 46px; top: auto; }
+#teleprompter[data-spot="bottom-right"] { right: 20px; left: auto; transform: none; bottom: 46px; top: auto; }
+#teleprompter[data-spot="top"]          { left: 50%; transform: translateX(-50%); top: 210px; bottom: auto; }
+#teleprompter[data-spot="top-left"]     { left: 20px; transform: none; top: 210px; bottom: auto; }
+#teleprompter[data-spot="top-right"]    { right: 20px; left: auto; transform: none; top: 210px; bottom: auto; }
+#teleprompter[data-spot="free"]         { transform: none; }
+
+.tp-grip {
+  height: 16px; margin: 0 -20px 4px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: grab;
+}
+.tp-grip:active { cursor: grabbing; }
+.tp-grip-dots {
+  width: 34px; height: 4px; border-radius: 2px;
+  background: var(--line);
+}
+.tp-grip:hover .tp-grip-dots { background: var(--fg-3); }
+
+.tp-line {
+  font-size: 19px; line-height: 1.55; color: var(--fg-2);
+  text-align: center; user-select: text;
+  max-height: 132px; overflow: hidden;
+}
+.tp-line .w { transition: color .08s, background .08s; border-radius: 4px; padding: 0 1px; }
+.tp-line .w.said { color: var(--fg-3); }
+.tp-line .w.now {
+  color: #fff; background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent);
+}
+.tp-foot {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 14px; padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--fg-3); font-size: 11.5px;
+}
+.tp-meta { flex: none; font-variant-numeric: tabular-nums; }
+.tp-progress { flex: 1; height: 4px; background: var(--bg-3); border-radius: 2px; overflow: hidden; }
+.tp-progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.tp-left { flex: none; font-variant-numeric: tabular-nums; }
+.tp-close { color: var(--fg-3); padding: 3px 6px; border-radius: 5px; flex: none; }
+.tp-close:hover { background: var(--bg-3); color: var(--fg); }
+
+/* The landing zone shown while dragging. */
+#tpGhost {
+  position: fixed; z-index: 119;
+  border: 2px dashed var(--accent);
+  background: rgba(255,106,61,.10);
+  border-radius: 14px;
+  pointer-events: none;
+  transition: all .12s ease-out;
+}

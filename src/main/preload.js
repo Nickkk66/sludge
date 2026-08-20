@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('api', {
     onDone: (cb) => ipcRenderer.on('media:done', (_e, p) => cb(p))
   },
   setTheme: (theme) => call('theme:set', theme),
+  openVoiceSettings: () => call('voices:openSettings'),
 
   ai: {
     status: (autostart) => call('ai:status', autostart),

@@ -216,7 +216,12 @@
     <select id="spVoice"></select>
   </label>
 
+  <button class="sp-warn" id="spVoiceWarn" hidden title="Your Mac only has the old robotic voices installed">
+    ⚠ robotic voices
+  </button>
+
   <label class="sp-check"><input type="checkbox" id="spFollow" checked /> follow along</label>
+  <label class="sp-check"><input type="checkbox" id="spShowText" checked /> show text</label>
 
   <div class="sp-now" id="spNow"></div>
   <button class="cb-close" id="speechbarClose" title="Close">✕</button>
@@ -311,6 +316,7 @@
         <div class="welcome-actions">
           <button class="big-btn primary" id="welcomeOpen">Open a PDF</button>
           <button class="big-btn" id="welcomeLibrary">Library</button>
+          <button class="big-btn" id="welcomeBack" hidden>Back to reading</button>
         </div>
         <div id="welcomeRecent"></div>
       </div>
@@ -472,6 +478,37 @@ This saves next to your PDF, with your highlights."></textarea>
   </div>
 </div>
 
+<div id="voiceModal" class="modal hidden">
+  <div class="modal-card narrow">
+    <div class="modal-head">
+      <h2>Get better voices</h2>
+      <button class="panel-close" id="voiceClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-intro">macOS ships with old, robotic voices and keeps the good ones behind a download. Sludge can only use what your Mac has installed — but the natural-sounding ones are free and take a minute to add.</p>
+      <ol class="voice-steps">
+        <li>Open <b>System Settings → Accessibility → Spoken Content</b>.</li>
+        <li>Click the <b>ⓘ</b> next to <b>System Voice</b>, then <b>Manage Voices…</b></li>
+        <li>Under <b>English</b>, download any voice marked <b>Premium</b> — these are the natural ones. Good picks:
+          <div class="voice-picks">
+            <span><b>Ava</b> · American, female</span>
+            <span><b>Tom</b> · American, male</span>
+            <span><b>Serena</b> · British, female</span>
+            <span><b>Daniel</b> · British, male</span>
+          </div>
+        </li>
+        <li>Come back and hit <b>Recheck</b> — they'll appear in the voice list.</li>
+      </ol>
+      <p class="voice-note">Premium voices are a few hundred MB each and run entirely offline once downloaded.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="link-btn" id="voiceRecheck">Recheck</button>
+      <div class="grow"></div>
+      <button class="big-btn primary" id="voiceOpenSettings">Open System Settings</button>
+    </div>
+  </div>
+</div>
+
 <div id="onboardModal" class="modal hidden">
   <div class="modal-card narrow">
     <div class="modal-body onboard">
@@ -549,6 +586,21 @@ This saves next to your PDF, with your highlights."></textarea>
   <button class="ub-go" id="ubGo">Get it on GitHub</button>
   <button class="ub-close" id="ubClose" title="Not now">✕</button>
 </div>
+
+<div id="teleprompter" hidden data-spot="bottom">
+  <div class="tp-grip" id="tpGrip" title="Drag to move — it snaps to an edge">
+    <span class="tp-grip-dots"></span>
+  </div>
+  <div class="tp-line" id="tpLine"></div>
+  <div class="tp-foot">
+    <span class="tp-meta" id="tpMeta"></span>
+    <div class="tp-progress"><i id="tpBar"></i></div>
+    <span class="tp-left" id="tpLeft"></span>
+    <button class="tp-close" id="tpClose" title="Hide the reading panel">✕</button>
+  </div>
+</div>
+
+<div id="tpGhost" hidden></div>
 
 <div id="toast" class="toast hidden"></div>
 
