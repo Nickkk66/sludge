@@ -1,4 +1,4 @@
-import { $, $$, el, debounce, toast, fmtSize } from './util.js';
+import { $, $$, el, debounce, toast, fmtSize, escapeHtml } from './util.js';
 import { state, on, emit, COLORS } from './state.js';
 import {
   initViewer, loadDocument, buildTextIndex, goToPage, setZoom, stepZoom,
@@ -16,6 +16,7 @@ import { initSpeech, speech, play as speechPlay, pause as speechPause, stop as s
          toggle as speechToggle, skip as speechSkip, setRate, setVoice, getVoices, readingState } from './speech.js';
 import { initDocNotes, getMarkdown, setMarkdown, togglePreview, exportDocument } from './docnotes.js';
 import { initFocus, restoreFocus, openPicker } from './focus.js';
+import { initProfile, loadProfile, showOnboarding, renderGreeting, profile } from './profile.js';
 
 /* ------------------------------------------------------------ boot */
 
@@ -37,17 +38,24 @@ async function boot() {
   initSpeech();
   initDocNotes();
   initFocus();
+  initProfile();
   wireSpeechBar();
   wireDocument();
+  wireUpdates();
+  loadProfile(state.settings);
   buildSwatches();
   wireChrome();
   wireKeyboard();
   wireDragDrop();
 
   $('#autoNote').checked = state.autoNote;
+  await renderGreeting();
   await renderRecent();
   refreshAiStatus({ autostart: false });
   restoreFocus();
+
+  // First launch: ask the few questions that make the AI's answers fit.
+  if (!profile.onboarded) setTimeout(showOnboarding, 500);
 
   window.api.onOpenFile((path) => openDocument(path));
   window.api.onMenu(handleMenu);
@@ -89,7 +97,7 @@ async function openDocument(filePath) {
     $('#welcome').hidden = true;
     $('#docTab').hidden = false;
     $('#tabName').textContent = doc.name;
-    document.title = `${doc.name} — Marginalia`;
+    document.title = `${doc.name} — Sludge`;
 
     await loadDocument(doc.bytes);
     $('#pageTotal').textContent = String(state.numPages);
@@ -158,12 +166,13 @@ async function closeDocument() {
   $('#docTab').hidden = true;
   $('#welcome').hidden = false;
   $('#pageTotal').textContent = '0';
-  document.title = 'Marginalia';
+  document.title = 'Sludge';
   clearSearch();
   resetAiThread();
   renderNotesPanel();
   $('#thumbs').replaceChildren();
   await renderRecent();
+  await renderGreeting();
   setSaveState('', '—');
 }
 
@@ -464,6 +473,32 @@ function wireChrome() {
   on('panel:right', (view) => openRightPanel(view));
 }
 
+/* ------------------------------------------------------------ updates */
+
+function wireUpdates() {
+  const banner = $('#updateBanner');
+  let releaseUrl = null;
+
+  const show = (info) => {
+    releaseUrl = info.url;
+    $('#ubText').innerHTML =
+      `<b>Sludge ${escapeHtml(info.latest)}</b> is out — you're on ${escapeHtml(info.current)}.`;
+    banner.classList.remove('hidden');
+  };
+
+  $('#ubGo').addEventListener('click', () => {
+    window.api.update.open(releaseUrl);
+    banner.classList.add('hidden');
+    toast('Opened the release page. Install it, then reopen Sludge — it will offer to bin the old copy.');
+  });
+  $('#ubClose').addEventListener('click', () => banner.classList.add('hidden'));
+
+  window.api.update.onAvailable(show);
+  window.api.update.onCleaned(({ removed }) => {
+    if (removed) toast(`Moved ${removed} older cop${removed === 1 ? 'y' : 'ies'} of Sludge to the Trash.`);
+  });
+}
+
 /* ------------------------------------------------------------ read aloud */
 
 function wireSpeechBar() {
@@ -588,7 +623,15 @@ function handleMenu(action) {
     export: exportNotes,
     reveal: () => $('#btnRevealSidecar').click(),
     find: () => openLeftPanel('search'),
-    settings: () => { $$('.rtab').find((t) => t.dataset.ribbon === 'ai').click(); },
+    settings: showOnboarding,
+    checkUpdates: async () => {
+      const info = await window.api.update.check();
+      if (info.upToDate) toast(`You're on the latest build (${info.current}).`);
+      else {
+        $('#ubText').innerHTML = `<b>Sludge ${escapeHtml(info.latest)}</b> is out — you're on ${escapeHtml(info.current)}.`;
+        $('#updateBanner').classList.remove('hidden');
+      }
+    },
     'panel:thumbnails': () => openLeftPanel('thumbnails'),
     'panel:outline': () => openLeftPanel('outline'),
     'panel:notes': () => toggleRightPanel('notes'),

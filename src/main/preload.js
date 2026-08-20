@@ -31,6 +31,16 @@ contextBridge.exposeInMainWorld('api', {
 
   exportNotes: (defaultName, content) => call('export:save', defaultName, content),
 
+  update: {
+    check: () => call('update:check'),
+    open: (url) => call('update:open', url),
+    oldCopies: () => call('update:oldCopies'),
+    cleanup: () => call('update:cleanup'),
+    version: () => call('app:version'),
+    onAvailable: (cb) => ipcRenderer.on('update:available', (_e, p) => cb(p)),
+    onCleaned: (cb) => ipcRenderer.on('update:cleaned', (_e, p) => cb(p))
+  },
+
   media: {
     list: () => call('media:list'),
     remove: (id) => call('media:remove', id),

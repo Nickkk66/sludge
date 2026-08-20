@@ -17,13 +17,45 @@ const DEFAULT_SETTINGS = {
   defaultColor: '#f6d34a',
   autoNote: true,
   invert: false,
+  focusDock: 'bottom',
+  focusHeight: 320,
+  focusWidth: 380,
   zoom: 1,
   lastDocId: null,
+  checkUpdates: true,
+  lastRunVersion: null,
   spread: 'single'
 };
 
 async function ensureDirs() {
+  await migrateFromOldName();
   await fsp.mkdir(indexDir(), { recursive: true });
+}
+
+/**
+ * The app was called Marginalia before it was called Sludge, which moves the
+ * user-data folder. Carry the old one across once so nobody loses their
+ * library, downloaded videos, or reading positions in a rename.
+ */
+async function migrateFromOldName() {
+  const current = userDir();
+  const previous = path.join(path.dirname(current), 'Marginalia');
+  if (current === previous) return;
+  try {
+    await fsp.access(path.join(current, 'settings.json'));
+    return;                     // already set up under the new name
+  } catch { /* nothing here yet */ }
+  try {
+    await fsp.access(previous);
+  } catch {
+    return;                     // nothing to bring over
+  }
+  try {
+    await fsp.cp(previous, current, { recursive: true, force: false, errorOnExist: false });
+    console.log(`Migrated app data from ${previous}`);
+  } catch (err) {
+    console.warn('Could not migrate old app data:', err.message);
+  }
 }
 
 async function readJSON(file, fallback) {

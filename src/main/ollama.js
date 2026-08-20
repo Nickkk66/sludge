@@ -129,10 +129,11 @@ function buildPrompt({ query, evidence, docName }) {
  * Stream a grounded answer. onToken receives text deltas; resolves with the
  * full answer. Abort by calling the returned controller's abort().
  */
-function chat({ model, query, evidence, docName, history = [] }, onToken) {
+function chat({ model, query, evidence, docName, history = [], profile = null }, onToken) {
   const ctrl = new AbortController();
+  const system = profile ? `${SYSTEM_PROMPT}\n\nAbout this reader: ${profile}` : SYSTEM_PROMPT;
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: system },
     ...history.slice(-6),
     { role: 'user', content: buildPrompt({ query, evidence, docName }) }
   ];
@@ -183,7 +184,7 @@ function chat({ model, query, evidence, docName, history = [] }, onToken) {
  * One-shot text transformation for the note document. Unlike `chat` this has
  * no document evidence attached — it only ever sees the text handed to it.
  */
-async function rewrite({ model, instruction, text }) {
+async function rewrite({ model, instruction, text, profile = null }) {
   const res = await api('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -195,7 +196,8 @@ async function rewrite({ model, instruction, text }) {
         {
           role: 'system',
           content: 'You edit the user\'s own writing. Follow the instruction exactly and return ONLY the resulting text — ' +
-                   'no preamble, no explanation, no surrounding quotes, no code fences. Preserve Markdown formatting.'
+                   'no preamble, no explanation, no surrounding quotes, no code fences. Preserve Markdown formatting.' +
+                   (profile ? `\n\nAbout this writer: ${profile}` : '')
         },
         { role: 'user', content: `${instruction}\n\n---\n${text}` }
       ],

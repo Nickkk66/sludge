@@ -10,7 +10,7 @@ const { app } = require('electron');
  * The app ships without any video — packs are downloaded on demand from a
  * release URL, so adding a new one later means publishing a file, not shipping
  * a new build. Files land in the user's app-data folder and are served to the
- * renderer through the custom `marginalia-media://` protocol.
+ * renderer through the custom `sludge-media://` protocol.
  */
 
 const mediaDir = () => path.join(app.getPath('userData'), 'media');
@@ -19,8 +19,8 @@ const catalogPath = () => path.join(app.getPath('userData'), 'media-catalog.json
 // Where `download` looks for packs. Overridable so anyone can point the app at
 // their own release without touching the code.
 const DEFAULT_BASE =
-  process.env.MARGINALIA_MEDIA_BASE ||
-  'https://github.com/Nickkk66/marginalia/releases/download/media-v1';
+  process.env.SLUDGE_MEDIA_BASE ||
+  'https://github.com/Nickkk66/sludge/releases/download/media-v1';
 
 const BUILT_IN = [
   {
@@ -67,7 +67,7 @@ async function list() {
       // A partial download would play as a broken file; treat tiny files as absent.
       installed = size > 1_000_000;
     } catch { /* not installed */ }
-    packs.push({ ...p, installed, size, url: `marginalia-media://${encodeURIComponent(p.file)}` });
+    packs.push({ ...p, installed, size, url: `sludge-media://${encodeURIComponent(p.file)}` });
   }
   return { base: catalog.base || DEFAULT_BASE, packs };
 }
@@ -130,7 +130,7 @@ async function download(id, onProgress, signal) {
   return { id, file: pack.file, size: received };
 }
 
-/** Resolve a `marginalia-media://` request to a real path inside the media dir. */
+/** Resolve a `sludge-media://` request to a real path inside the media dir. */
 function resolve(name) {
   const safe = path.basename(decodeURIComponent(name));
   return path.join(mediaDir(), safe);

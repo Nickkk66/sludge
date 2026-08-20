@@ -1,15 +1,28 @@
-# Marginalia
+<div align="center">
 
-A desktop PDF reader for studying. Highlight text, attach notes, tag them, see every
-note in one panel, and ask a **local** AI about the document *and* about your own notes —
-without anything leaving your machine.
+<img src="assets/icon.png" width="128" alt="Sludge" />
 
-Built because reading an 800-page textbook in a generic PDF viewer means your thinking
-ends up scattered across a separate document.
+# Sludge
 
-![Marginalia with three highlights and the notes panel open](docs/screenshot-notes.png)
+**A PDF app that reads to you, takes your notes, answers your questions — and plays brainrot in the corner so your brain stays put.**
 
-*A sample PDF (`docs/sample.pdf`, public-domain text) with highlights, notes, and tags.*
+Everything runs on your machine. No account, no subscription, no ads, no network.
+
+</div>
+
+---
+
+It's a PDF app. Yes, basic. But:
+
+- **Normal PDF reading** — nothing paid, no ads, all local.
+- **Notes that stay together** — highlighting, pins, tags, search, export. Everything you'd expect.
+- **A chapter finder that actually works** — even when the PDF has no outline, it reads the book's own contents pages.
+- **A local AI that has read what you've read** — ask about the textbook, ask about *your own notes*, and it tells you which is which.
+- **Don't want to read?** It reads to you, highlighting each word as it goes.
+- **Night and day mode**, obviously — and it can invert the page itself.
+- **Brainrot mode.** A textbook can't hold your attention on its own, so there's Minecraft parkour and Subway Surfers running alongside it.
+
+**The result:** the textbook read aloud to you while you follow along, notes going down the side in a real document or as highlights on the page, and enough motion in the corner that you don't get up and leave.
 
 ## What it does
 
@@ -28,7 +41,7 @@ ends up scattered across a separate document.
 - Search jumps straight to the nearest match and highlights every hit on the page.
   Narrow it to pages you've highlighted in a given colour.
 - **Chapters, even without an outline.** Most scanned textbooks ship no embedded PDF
-  outline. Marginalia reads the book's own contents pages, works out the offset between
+  outline. Sludge reads the book's own contents pages, works out the offset between
   printed page numbers and PDF pages, and places every chapter on the right one — 48
   entries recovered from an 804-page textbook that exposes none.
 - It remembers your page, scroll position, and zoom per document, and reopens there.
@@ -53,11 +66,26 @@ ends up scattered across a separate document.
 - Send any highlight straight into the document from the notes panel.
 - Split view widens it to half the window so you can read and write at once.
 
-**Focus video**
-- An optional silent, looping gameplay strip along the bottom for when a plain page of
-  text won't hold still. Resize it by dragging its top edge.
+**Brainrot mode**
+- A silent, looping gameplay strip — Minecraft parkour or Subway Surfers — that runs
+  beside the page. Muted on purpose: the read-aloud voice owns the audio.
+- Dock it to any edge. On the left or right it becomes a tall portrait crop, which is
+  how these clips are meant to be watched and shows far more than a letterbox strip.
+- Drag its inner edge to resize.
 - Video packs are **add-ons**: the app ships without them and downloads them on demand,
-  so new packs need a published file rather than a new build.
+  so a new pack needs a published file rather than a new build of the app.
+
+**It knows who you are**
+- Four questions on first launch — your name, what you're reading for, how you want
+  answers, anything else worth knowing. Stored locally, folded into the model's prompt.
+- After that it greets you and offers the book you were in the middle of.
+- Change your answers any time from **Sludge → About You** (`⌘,`).
+
+**Updates**
+- Checks GitHub on launch and tells you when a new build is out; it doesn't install
+  anything behind your back.
+- Once you're running the new version it finds older copies still lying around and
+  offers to move them to the Trash — always asking, always the Trash, never a delete.
 
 **Ask a local AI**
 - Ranks the document's pages *and* your own notes against your question, then answers from what it found.
@@ -109,7 +137,7 @@ right-click → Open.
 
 ## Setting up the AI
 
-Install Ollama, then pull a small model — Marginalia starts the Ollama server itself if
+Install Ollama, then pull a small model — Sludge starts the Ollama server itself if
 it isn't already running, and preloads the model so the first answer isn't slow.
 
 ```bash
@@ -161,8 +189,8 @@ files by setting a base URL:
 MARGINALIA_MEDIA_BASE="https://example.com/my-packs" npm start
 ```
 
-Downloads land in `~/Library/Application Support/Marginalia/media/` and are served to the
-page through a custom `marginalia-media://` scheme, so a 200 MB video streams from disk
+Downloads land in `~/Library/Application Support/Sludge/media/` and are served to the
+page through a custom `sludge-media://` scheme, so a 200 MB video streams from disk
 instead of being read into memory. "Show media folder" in the picker opens it, and you can
 drop your own `.mp4` in there — name it to match a pack's `file` and it counts as installed.
 

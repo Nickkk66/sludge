@@ -1,5 +1,6 @@
 import { $, el, escapeHtml, renderMarkdown, debounce, toast, uid } from './util.js';
 import { state, emit, on } from './state.js';
+import { profilePrompt } from './profile.js';
 
 /**
  * The long-form note document — a Markdown editor that lives beside the PDF.
@@ -215,7 +216,8 @@ async function runAiAction(action) {
     const result = await window.api.ai.rewrite({
       model: state.aiModel,
       instruction: action.prompt,
-      text: target
+      text: target,
+      profile: profilePrompt()
     });
     const clean = String(result || '').trim();
     if (!clean) throw new Error('the model returned nothing');

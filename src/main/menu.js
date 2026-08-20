@@ -13,7 +13,8 @@ module.exports = function buildMenu(getWin) {
       submenu: [
         { role: 'about' },
         { type: 'separator' },
-        { label: 'Settings…', accelerator: 'Cmd+,', click: send('settings') },
+        { label: 'About You…', accelerator: 'Cmd+,', click: send('settings') },
+        { label: 'Check for Updates…', click: send('checkUpdates') },
         { type: 'separator' },
         { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }
       ]
@@ -76,8 +77,8 @@ module.exports = function buildMenu(getWin) {
     {
       role: 'help',
       submenu: [{
-        label: 'Project on GitHub',
-        click: () => shell.openExternal('https://github.com/Nickkk66/marginalia')
+        label: 'Sludge on GitHub',
+        click: () => shell.openExternal('https://github.com/Nickkk66/sludge')
       }]
     }
   ];

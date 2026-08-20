@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data:; worker-src 'self' blob:; media-src 'self' marginalia-media: blob:;" />
-<title>Marginalia</title>
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data:; worker-src 'self' blob:; media-src 'self' sludge-media: blob:;" />
+<title>Sludge</title>
 <link rel="stylesheet" href="css/base.css" />
 <link rel="stylesheet" href="css/ribbon.css" />
 <link rel="stylesheet" href="css/viewer.css" />
@@ -215,6 +215,7 @@
 </div>
 
 <!-- ===================== main ===================== -->
+<div id="stage">
 <main id="main">
   <!-- left icon rail -->
   <div id="rail">
@@ -278,8 +279,27 @@
 
     <div id="welcome">
       <div class="welcome-inner">
-        <h1>Marginalia</h1>
-        <p class="sub">Read a PDF, highlight it, keep your notes together, and ask a local AI about both — all offline.</p>
+        <div class="welcome-mark">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 3.2h7.2L18 8v7.4c-1 1.4-2.2.2-3 1.4c-.8 1.2-.2 3-1.6 3.4c-1.4.4-2.2-1-3.2-.6c-1 .4-1.2 2.4-2.6 2.3C6.2 21.4 6 19 6 17.4z"/>
+            <path d="M13.2 3.2V8H18"/>
+            <path d="M8.6 21.4v2.2M12.6 21.9v1.8M16 19.6v2.4"/>
+          </svg>
+        </div>
+        <h1 id="welcomeGreeting">Sludge</h1>
+        <p class="sub" id="welcomeSub">Read a PDF, highlight it, keep your notes together, and ask a local AI about both — all offline.</p>
+
+        <div id="welcomeResume" hidden>
+          <button class="resume-card" id="resumeBtn">
+            <div class="resume-cover" id="resumeCover"></div>
+            <div class="resume-text">
+              <b id="resumeName"></b>
+              <small id="resumeMeta"></small>
+            </div>
+            <span class="resume-go">Continue →</span>
+          </button>
+        </div>
+
         <div class="welcome-actions">
           <button class="big-btn primary" id="welcomeOpen">Open a PDF</button>
           <button class="big-btn" id="welcomeLibrary">Library</button>
@@ -382,11 +402,18 @@ This saves next to your PDF, with your highlights."></textarea>
       <svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>
     </button>
     <span class="vs-name" id="vsName"></span>
+    <div class="vs-docks">
+      <button class="vs-dock" data-dock="left"   title="Dock left">▌</button>
+      <button class="vs-dock" data-dock="bottom" title="Dock bottom">▄</button>
+      <button class="vs-dock" data-dock="top"    title="Dock top">▀</button>
+      <button class="vs-dock" data-dock="right"  title="Dock right">▐</button>
+    </div>
     <button class="vs-btn" id="vsSwap" title="Switch video">
       <svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>
     </button>
     <button class="vs-btn" id="vsClose" title="Hide">✕</button>
   </div>
+</div>
 </div>
 
 <!-- ===================== bottom bar ===================== -->
@@ -436,6 +463,51 @@ This saves next to your PDF, with your highlights."></textarea>
   </div>
 </div>
 
+<div id="onboardModal" class="modal hidden">
+  <div class="modal-card narrow">
+    <div class="modal-body onboard">
+      <div class="onboard-mark">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 3.2h7.2L18 8v7.4c-1 1.4-2.2.2-3 1.4c-.8 1.2-.2 3-1.6 3.4c-1.4.4-2.2-1-3.2-.6c-1 .4-1.2 2.4-2.6 2.3C6.2 21.4 6 19 6 17.4z"/>
+          <path d="M13.2 3.2V8H18"/>
+          <path d="M8.6 21.4v2.2M12.6 21.9v1.8M16 19.6v2.4"/>
+        </svg>
+      </div>
+      <h2>Welcome to Sludge</h2>
+      <p class="onboard-intro">Four quick questions. They stay on this machine and only get used to make the local AI's answers fit you better.</p>
+
+      <label class="onboard-field">
+        <span>What should I call you?</span>
+        <input id="obName" placeholder="Nick" maxlength="40" />
+      </label>
+
+      <label class="onboard-field">
+        <span>What are you mostly reading for?</span>
+        <input id="obPurpose" placeholder="AP US History — exam in May" maxlength="120" />
+      </label>
+
+      <label class="onboard-field">
+        <span>How should answers come back?</span>
+        <select id="obStyle">
+          <option value="brief">Short and direct — just the answer</option>
+          <option value="explain" selected>Explain it — a bit of reasoning</option>
+          <option value="study">Study mode — quiz me and push back</option>
+        </select>
+      </label>
+
+      <label class="onboard-field">
+        <span>Anything else worth knowing?</span>
+        <textarea id="obNotes" rows="2" placeholder="I get lost in long paragraphs. Keep it concrete." maxlength="300"></textarea>
+      </label>
+    </div>
+    <div class="modal-foot">
+      <button class="link-btn" id="obSkip">Skip</button>
+      <div class="grow"></div>
+      <button class="big-btn primary" id="obSave">Start reading</button>
+    </div>
+  </div>
+</div>
+
 <div id="focusModal" class="modal hidden">
   <div class="modal-card narrow">
     <div class="modal-head">
@@ -465,6 +537,13 @@ This saves next to your PDF, with your highlights."></textarea>
     <button id="neCancel">Cancel</button>
     <button class="primary" id="neSave">Save</button>
   </div>
+</div>
+
+<div id="updateBanner" class="update-banner hidden">
+  <span class="ub-dot"></span>
+  <span class="ub-text" id="ubText"></span>
+  <button class="ub-go" id="ubGo">Get it on GitHub</button>
+  <button class="ub-close" id="ubClose" title="Not now">✕</button>
 </div>
 
 <div id="toast" class="toast hidden"></div>

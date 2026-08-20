@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#333844"/>
+      <stop offset="1" stop-color="#15171b"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.6" stop-color="#f3f1ec"/>
+      <stop offset="1" stop-color="#ded9cf"/>
+    </linearGradient>
+    <linearGradient id="goo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff7a43"/>
+      <stop offset="0.55" stop-color="#ff5f33"/>
+      <stop offset="1" stop-color="#d93a22"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <ellipse cx="512" cy="878" rx="286" ry="52" fill="#ff5f33" opacity="0.22" filter="url(#glow)"/>
+
+  <!-- ink that has already run off the page, drawn behind the sheet -->
+  <g fill="url(#goo)">
+    <path d="M 322 590 c 26 0 34 74 30 132 c -3 44 -14 74 -14 106 a 28 28 0 0 0 56 0 c 0 -44 -14 -78 -12 -128 c 2 -58 -6 -110 -34 -110 z"/>
+    <path d="M 512 620 c 30 0 36 96 32 158 c -3 52 -16 88 -16 124 a 32 32 0 0 0 64 0 c 0 -50 -16 -86 -14 -142 c 3 -66 -8 -140 -40 -140 z"/>
+    <path d="M 690 596 c 24 0 30 66 27 116 c -3 42 -12 68 -12 96 a 26 26 0 0 0 52 0 c 0 -38 -13 -64 -11 -108 c 2 -52 -6 -104 -30 -104 z"/>
+  </g>
+  <circle cx="350" cy="852" r="19" fill="url(#goo)"/>
+  <circle cx="544" cy="920" r="23" fill="url(#goo)"/>
+  <circle cx="716" cy="820" r="17" fill="url(#goo)"/>
+
+  <!-- the sheet: square at the top, sagging into blobs at the bottom -->
+  <path fill="url(#paper)" d="
+    M 262 196
+    h 316
+    l 184 184
+    v 244
+    c -30 44 -66 6 -96 44
+    c -30 38 -6 96 -46 112
+    c -40 16 -66 -34 -104 -22
+    c -38 12 -44 84 -86 82
+    c -42 -2 -56 -66 -78 -100
+    c -18 -28 -22 -46 -22 -76
+    z"/>
+
+  <!-- folded corner -->
+  <path fill="#c9c3b6" d="M 578 196 l 184 184 h -184 z"/>
+  <path fill="#eeeae2" d="M 578 196 l 184 184 h -142 a 42 42 0 0 1 -42 -42 z"/>
+
+  <!-- PDF, the F already sliding away -->
+  <g fill="#5b6270" font-family="Helvetica, Arial, sans-serif" font-weight="bold" font-size="132">
+    <text x="308" y="500">P</text>
+    <text x="404" y="508" transform="rotate(4 404 508)">D</text>
+    <text x="512" y="524" transform="rotate(11 512 524)" fill="#ff5f33">F</text>
+  </g>
+
+  <!-- a highlighter stroke, running downhill -->
+  <rect x="306" y="566" width="250" height="34" rx="17" fill="#f6d34a" transform="rotate(7 431 583)"/>
+  <rect x="306" y="628" width="176" height="30" rx="15" fill="#9aa2b0" transform="rotate(11 394 643)" opacity="0.75"/>
+</svg>

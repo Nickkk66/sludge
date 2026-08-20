@@ -363,3 +363,14 @@
 .pack-progress small { display: block; color: var(--fg-3); font-size: 11px; margin-top: 4px; }
 .link-btn { color: var(--fg-3); font-size: 12px; text-decoration: underline; }
 .link-btn:hover { color: var(--fg); }
+
+/* ---------- first-run questions ---------- */
+.onboard { padding: 26px 26px 8px; }
+.onboard-mark { display: flex; justify-content: center; margin-bottom: 14px; }
+.onboard-mark svg { width: 44px; height: 44px; stroke: var(--accent); stroke-width: 1.4; }
+.onboard h2 { margin: 0 0 8px; font-size: 20px; text-align: center; }
+.onboard-intro { margin: 0 0 22px; color: var(--fg-2); font-size: 12.5px; line-height: 1.6; text-align: center; }
+.onboard-field { display: block; margin-bottom: 15px; }
+.onboard-field > span { display: block; color: var(--fg-2); font-size: 12px; margin-bottom: 6px; }
+.onboard-field input, .onboard-field select, .onboard-field textarea { width: 100%; }
+.onboard-field textarea { resize: vertical; }

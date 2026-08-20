@@ -1,6 +1,7 @@
 import { $, el, escapeHtml, renderMarkdown, uid, toast } from './util.js';
 import { state, on, emit } from './state.js';
 import { scrollToSpot, goToPage } from './viewer.js';
+import { profile, profilePrompt } from './profile.js';
 
 let activeStream = null;
 let activeBubble = null;
@@ -139,7 +140,9 @@ export async function ask(question) {
     annotations: state.annotations.map((a) => ({
       id: a.id, page: a.page, type: a.type, note: a.note, quote: a.quote, tags: a.tags, color: a.color
     })),
-    history: state.aiHistory.slice(-4)
+    history: state.aiHistory.slice(-4),
+    profile: profilePrompt(),
+    readerName: profile.name || null
   });
 
   state.aiHistory.push({ role: 'user', content: q });

@@ -1,5 +1,6 @@
 'use strict';
 const path = require('path');
+const fs = require('fs');
 const fsp = require('fs/promises');
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, protocol, net } = require('electron');
 const { pathToFileURL } = require('url');
@@ -7,6 +8,7 @@ const store = require('./store');
 const ollama = require('./ollama');
 const { retrieve } = require('./retrieval');
 const media = require('./media');
+const updater = require('./updater');
 const buildMenu = require('./menu');
 
 let win = null;
@@ -17,7 +19,7 @@ const activeDownloads = new Map();
 // than loosening the renderer's file access. Streaming lets a 200 MB video
 // start playing without being read into memory.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'marginalia-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }
+  { scheme: 'sludge-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }
 ]);
 // A PDF path passed on the command line (or handed over by Finder) opens once
 // the window is ready.
@@ -75,13 +77,19 @@ app.whenReady().then(async () => {
   await store.ensureDirs();
   await media.ensureDir();
 
-  protocol.handle('marginalia-media', (request) => {
-    const name = request.url.replace(/^marginalia-media:\/\//, '').split('?')[0];
+  protocol.handle('sludge-media', (request) => {
+    const name = request.url.replace(/^sludge-media:\/\//, '').split('?')[0];
     return net.fetch(pathToFileURL(media.resolve(name)).toString());
   });
 
   createWindow();
   Menu.setApplicationMenu(buildMenu(() => win));
+  if (process.platform === 'darwin' && app.dock) {
+    // In a packaged build macOS uses the bundle icon; this covers `npm start`.
+    const icon = path.join(__dirname, '..', '..', 'assets', 'icon.png');
+    if (fs.existsSync(icon)) app.dock.setIcon(icon);
+  }
+  runStartupChecks();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -90,6 +98,32 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+/**
+ * On launch: notice a newer release, and — if this run is a version bump —
+ * offer to clear out the copy that was superseded.
+ */
+async function runStartupChecks() {
+  const settings = await store.getSettings();
+  const current = app.getVersion();
+
+  if (settings.lastRunVersion && updater.compareVersions(current, settings.lastRunVersion) > 0) {
+    // Give the window a moment to paint before putting a dialog over it.
+    setTimeout(async () => {
+      const result = await updater.offerCleanup(win).catch(() => null);
+      if (result && result.removed && win && !win.webContents.isDestroyed()) {
+        win.webContents.send('update:cleaned', result);
+      }
+    }, 1400);
+  }
+  await store.saveSettings({ lastRunVersion: current });
+
+  if (settings.checkUpdates === false) return;
+  const info = await updater.checkForUpdate();
+  if (!info.upToDate && win && !win.webContents.isDestroyed()) {
+    win.webContents.send('update:available', info);
+  }
+}
 
 /* ------------------------------------------------------------------ IPC */
 
@@ -200,6 +234,14 @@ ipcMain.on('media:cancel', (_e, id) => {
   if (ctrl) ctrl.abort();
 });
 
+/* -------------------------------------------------------- updates */
+
+handle('update:check', async () => updater.checkForUpdate());
+handle('update:open', async (url) => { updater.openReleasePage(url); return true; });
+handle('update:oldCopies', async () => updater.findOldCopies());
+handle('update:cleanup', async () => updater.offerCleanup(win));
+handle('app:version', async () => app.getVersion());
+
 handle('theme:set', async (theme) => {
   nativeTheme.themeSource = theme === 'light' ? 'light' : 'dark';
   return theme;
@@ -226,7 +268,8 @@ handle('ai:retrieve', async ({ query, docId, annotations }) => {
 const CHITCHAT = /^\s*(hi|hey|hello|yo|sup|hiya|howdy|good (morning|afternoon|evening)|thanks?|thank you|ty|ok(ay)?|cool|nice|test|ping)\b[\s!.?]*$/i;
 const CAPABILITY = /^\s*(what can you do|what do you do|who are you|what are you|help|how do (i|you) (use|work)|what is this)\b[\s!.?]*$/i;
 
-function smallTalkReply(query, docName, noteCount) {
+function smallTalkReply(query, docName, noteCount, readerName) {
+  const hi = readerName ? `Hey ${readerName}` : 'Hey';
   if (CAPABILITY.test(query)) {
     return `I read **${docName || 'this PDF'}** and your own highlights and notes, and answer from both.\n\n` +
       `Try asking:\n` +
@@ -236,17 +279,17 @@ function smallTalkReply(query, docName, noteCount) {
       `I cite the book as [p. 112] and always say when something came from your notes. ` +
       `You currently have **${noteCount}** note${noteCount === 1 ? '' : 's'} in this document.`;
   }
-  return `Hey — ask me something about **${docName || 'this PDF'}** or about your notes and I'll dig through both. ` +
+  return `${hi} — ask me something about **${docName || 'this PDF'}** or about your notes and I'll dig through both. ` +
     `I only answer from what's actually in the document, so be as specific as you like.`;
 }
 
-ipcMain.on('ai:ask', async (event, { streamId, query, docId, docName, model, annotations, history }) => {
+ipcMain.on('ai:ask', async (event, { streamId, query, docId, docName, model, annotations, history, profile, readerName }) => {
   const reply = (channel, payload) => {
     if (!event.sender.isDestroyed()) event.sender.send(channel, { streamId, ...payload });
   };
   try {
     if (CHITCHAT.test(query) || CAPABILITY.test(query)) {
-      reply('ai:done', { text: smallTalkReply(query, docName, (annotations || []).length), smallTalk: true });
+      reply('ai:done', { text: smallTalkReply(query, docName, (annotations || []).length, readerName), smallTalk: true });
       return;
     }
     const index = await store.getTextIndex(docId);
@@ -263,7 +306,7 @@ ipcMain.on('ai:ask', async (event, { streamId, query, docId, docName, model, ann
     }
 
     const { promise, controller } = ollama.chat(
-      { model, query, evidence, docName, history },
+      { model, query, evidence, docName, history, profile },
       (token) => reply('ai:token', { token })
     );
     activeStreams.set(streamId, controller);

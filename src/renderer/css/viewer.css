@@ -1,8 +1,20 @@
+/* The stage holds the reading area and the focus video; flex direction decides
+   which edge the video is docked to. */
+#stage {
+  grid-area: stage;
+  display: flex;
+  min-height: 0; min-width: 0;
+}
+body.video-bottom #stage { flex-direction: column; }
+body.video-top    #stage { flex-direction: column-reverse; }
+body.video-right  #stage { flex-direction: row; }
+body.video-left   #stage { flex-direction: row-reverse; }
+
 #main {
-  grid-area: main;
+  flex: 1;
   display: grid;
   grid-template-columns: var(--rail-w) var(--left-w) 1fr 0;
-  min-height: 0;
+  min-height: 0; min-width: 0;
 }
 #main.left-collapsed { grid-template-columns: var(--rail-w) 0 1fr 0; }
 #main.right-open     { grid-template-columns: var(--rail-w) var(--left-w) 1fr var(--right-w); }
@@ -189,34 +201,54 @@ html[data-theme="dark"] .annoLayer .hl { mix-blend-mode: multiply; }
 
 /* ---------- focus video strip ---------- */
 #videostrip {
-  grid-area: video;
   position: relative;
-  height: var(--video-h, 200px);
-  min-height: 90px;
+  flex: none;
   background: #000;
-  border-top: 1px solid var(--line);
   overflow: hidden;
 }
+body.video-bottom #videostrip,
+body.video-top #videostrip { height: var(--video-h, 320px); min-height: 90px; width: 100%; }
+body.video-left #videostrip,
+body.video-right #videostrip { width: var(--video-w, 380px); min-width: 120px; height: 100%; }
+
+body.video-bottom #videostrip { border-top: 1px solid var(--line); }
+body.video-top    #videostrip { border-bottom: 1px solid var(--line); }
+body.video-left   #videostrip { border-right: 1px solid var(--line); }
+body.video-right  #videostrip { border-left: 1px solid var(--line); }
+
 #videostrip video {
   width: 100%; height: 100%;
   object-fit: cover;
   display: block;
   pointer-events: none;
 }
-.vs-grip {
-  position: absolute; top: 0; left: 0; right: 0; height: 6px;
-  cursor: ns-resize; z-index: 3;
-}
-.vs-grip:hover { background: var(--accent); opacity: .55; }
+
+/* The grip always sits on the edge that faces the reading area. */
+.vs-grip { position: absolute; z-index: 3; }
+body.video-bottom .vs-grip { top: 0; left: 0; right: 0; height: 7px; cursor: ns-resize; }
+body.video-top    .vs-grip { bottom: 0; left: 0; right: 0; height: 7px; cursor: ns-resize; }
+body.video-left   .vs-grip { right: 0; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
+body.video-right  .vs-grip { left: 0; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
+.vs-grip:hover { background: var(--accent); opacity: .6; }
+
 .vs-controls {
   position: absolute; top: 8px; right: 8px; z-index: 2;
   display: flex; align-items: center; gap: 4px;
   padding: 4px 4px 4px 10px;
-  background: rgba(0,0,0,.55); border-radius: 20px;
+  background: rgba(0,0,0,.58); border-radius: 20px;
   backdrop-filter: blur(6px);
   opacity: 0; transition: opacity .15s;
+  max-width: calc(100% - 16px);
 }
 #videostrip:hover .vs-controls { opacity: 1; }
+.vs-docks { display: flex; gap: 1px; padding: 0 3px; }
+.vs-dock {
+  width: 20px; height: 20px; border-radius: 4px;
+  color: rgba(255,255,255,.6); font-size: 11px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.vs-dock:hover { background: rgba(255,255,255,.2); color: #fff; }
+.vs-dock.on { background: var(--accent); color: #fff; }
 .vs-name { color: #fff; font-size: 11.5px; margin-right: 4px; }
 .vs-btn {
   width: 24px; height: 24px; border-radius: 50%;
@@ -229,3 +261,27 @@ html[data-theme="dark"] .annoLayer .hl { mix-blend-mode: multiply; }
 /* Split view: the side panel takes half the window for writing while reading. */
 #main.right-open.right-wide { grid-template-columns: var(--rail-w) var(--left-w) 1fr minmax(420px, 46vw); }
 #main.left-collapsed.right-open.right-wide { grid-template-columns: var(--rail-w) 0 1fr minmax(420px, 50vw); }
+
+/* Keep the pointer from selecting text while dragging the video edge. */
+body.resizing-video { cursor: inherit; user-select: none; }
+body.resizing-video #videostrip { pointer-events: auto; }
+
+/* ---------- welcome / greeting ---------- */
+.welcome-mark { display: flex; justify-content: center; margin-bottom: 18px; }
+.welcome-mark svg { width: 54px; height: 54px; stroke: var(--accent); stroke-width: 1.4; }
+#welcomeResume { margin: 22px 0 26px; }
+.resume-card {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 12px 14px; text-align: left;
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.resume-card:hover { border-color: var(--accent); background: var(--bg-3); }
+.resume-cover {
+  width: 42px; height: 54px; flex: none; border-radius: 4px;
+  background: var(--bg-3) center/cover no-repeat; border: 1px solid var(--line);
+}
+.resume-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.resume-text b { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resume-text small { color: var(--fg-3); font-size: 11.5px; }
+.resume-go { color: var(--accent); font-size: 12.5px; font-weight: 600; flex: none; }

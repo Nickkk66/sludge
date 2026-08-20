@@ -46,8 +46,8 @@ html, body {
 
 body {
   display: grid;
-  grid-template-rows: 52px 36px auto auto auto 1fr auto 34px;
-  grid-template-areas: "titlebar" "ribbontabs" "ribbon" "colorbar" "speechbar" "main" "video" "status";
+  grid-template-rows: 52px 36px auto auto auto 1fr 34px;
+  grid-template-areas: "titlebar" "ribbontabs" "ribbon" "colorbar" "speechbar" "stage" "status";
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font);
@@ -194,3 +194,22 @@ select { cursor: pointer; }
 }
 .ctx-item:hover { background: var(--bg-3); color: var(--fg); }
 .ctx-check { width: 12px; color: var(--accent); flex: none; }
+
+/* ---------- update banner ---------- */
+.update-banner {
+  position: fixed; right: 16px; bottom: 46px; z-index: 940;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 10px 14px;
+  background: var(--bg-raise); border: 1px solid var(--accent);
+  border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.45);
+  max-width: 420px;
+}
+.ub-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+.ub-text { font-size: 12.5px; color: var(--fg); }
+.ub-go {
+  background: var(--accent); color: #fff; border-radius: 6px;
+  padding: 6px 12px; font-size: 12px; font-weight: 500; flex: none;
+}
+.ub-go:hover { filter: brightness(1.08); }
+.ub-close { color: var(--fg-3); padding: 4px 6px; border-radius: 5px; flex: none; }
+.ub-close:hover { background: var(--bg-3); color: var(--fg); }

@@ -11,7 +11,11 @@ import { state } from './state.js';
 
 let packs = [];
 let current = null;
+let dock = 'bottom';
 const downloading = new Map();
+
+const DOCKS = ['bottom', 'top', 'left', 'right'];
+const isVertical = () => dock === 'left' || dock === 'right';
 
 const video = () => $('#focusVideo');
 
@@ -22,6 +26,8 @@ export function showStrip(pack) {
   const strip = $('#videostrip');
   const v = video();
   strip.hidden = false;
+  document.body.classList.add('video-on');
+  setDock(dock);
   $('#vsName').textContent = pack.name;
   if (v.dataset.pack !== pack.id) {
     v.dataset.pack = pack.id;
@@ -33,10 +39,26 @@ export function showStrip(pack) {
   window.api.settings.set({ focusPack: pack.id, focusOn: true }).catch(() => {});
 }
 
+/**
+ * Move the strip to an edge. Docked to a side it becomes a tall portrait crop —
+ * the runner stays centred, so you see far more of the action than a short
+ * letterbox along the bottom.
+ */
+export function setDock(next) {
+  if (!DOCKS.includes(next)) return;
+  dock = next;
+  for (const d of DOCKS) document.body.classList.toggle(`video-${d}`, d === next);
+  for (const btn of document.querySelectorAll('.vs-dock')) {
+    btn.classList.toggle('on', btn.dataset.dock === next);
+  }
+  window.api.settings.set({ focusDock: next }).catch(() => {});
+}
+
 export function hideStrip() {
   const v = video();
   v.pause();
   $('#videostrip').hidden = true;
+  document.body.classList.remove('video-on');
   window.api.settings.set({ focusOn: false }).catch(() => {});
 }
 
@@ -155,26 +177,43 @@ export function initFocus() {
     toast('That video file could not be played — try removing and downloading it again.');
   });
 
-  // Drag the top edge to resize the strip.
+  for (const btn of document.querySelectorAll('.vs-dock')) {
+    btn.addEventListener('click', () => setDock(btn.dataset.dock));
+  }
+
+  // Drag the inner edge to resize, in whichever axis the dock implies.
   let dragging = false;
-  let startY = 0;
-  let startH = 0;
+  let start = 0;
+  let startSize = 0;
   $('#vsGrip').addEventListener('mousedown', (e) => {
     dragging = true;
-    startY = e.clientY;
-    startH = $('#videostrip').offsetHeight;
+    const strip = $('#videostrip');
+    if (isVertical()) { start = e.clientX; startSize = strip.offsetWidth; }
+    else { start = e.clientY; startSize = strip.offsetHeight; }
+    document.body.classList.add('resizing-video');
     e.preventDefault();
   });
   window.addEventListener('mousemove', (e) => {
     if (!dragging) return;
-    const h = Math.max(90, Math.min(window.innerHeight * 0.6, startH - (e.clientY - startY)));
-    document.documentElement.style.setProperty('--video-h', `${Math.round(h)}px`);
+    if (isVertical()) {
+      // Dragging away from the docked edge makes it bigger.
+      const delta = dock === 'left' ? (e.clientX - start) : (start - e.clientX);
+      const w = clamp(startSize + delta, 120, window.innerWidth * 0.7);
+      document.documentElement.style.setProperty('--video-w', `${Math.round(w)}px`);
+    } else {
+      const delta = dock === 'top' ? (e.clientY - start) : (start - e.clientY);
+      const h = clamp(startSize + delta, 90, window.innerHeight * 0.75);
+      document.documentElement.style.setProperty('--video-h', `${Math.round(h)}px`);
+    }
   });
   window.addEventListener('mouseup', () => {
     if (!dragging) return;
     dragging = false;
-    const h = $('#videostrip').offsetHeight;
-    window.api.settings.set({ focusHeight: h }).catch(() => {});
+    document.body.classList.remove('resizing-video');
+    const strip = $('#videostrip');
+    window.api.settings.set(isVertical()
+      ? { focusWidth: strip.offsetWidth }
+      : { focusHeight: strip.offsetHeight }).catch(() => {});
   });
 
   window.api.media.onProgress(({ id, received, total }) => {
@@ -195,10 +234,16 @@ export function initFocus() {
   });
 }
 
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
 /** Restore the strip if it was on when the app last closed. */
 export async function restoreFocus() {
   const h = state.settings.focusHeight;
+  const w = state.settings.focusWidth;
   if (h) document.documentElement.style.setProperty('--video-h', `${h}px`);
+  if (w) document.documentElement.style.setProperty('--video-w', `${w}px`);
+  dock = DOCKS.includes(state.settings.focusDock) ? state.settings.focusDock : 'bottom';
+  setDock(dock);
   if (!state.settings.focusOn) return;
   const data = await window.api.media.list().catch(() => null);
   if (!data) return;
