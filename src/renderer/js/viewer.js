@@ -216,27 +216,101 @@ export async function renderPage(n, force = false) {
 /**
  * Keep a drag-selection from running away down the page.
  *
- * The text layer is a pile of absolutely-positioned spans whose DOM order is
- * the order pdf.js found them, not the order they appear. When a drag ends
- * past the last span the browser happily extends the selection to the end of
- * the container. A sentinel element that only covers the page mid-drag gives
- * the selection something to stop against.
+ * pdf.js positions each text run absolutely and sizes it to the glyphs, so the
+ * leading between lines belongs to no span at all. A pointer in that gap hits
+ * the container instead, and because the container's content ends after the
+ * last span in DOM order — not in reading order — the browser extends the
+ * selection to the end of the page.
+ *
+ * Two things stop that: a sentinel that gives a downward drag something to
+ * land on, and holding the selection still whenever the pointer is between
+ * lines rather than on one.
  */
 function bindSelectionFix(textDiv) {
-  if (textDiv.querySelector('.endOfContent')) return;
+  if (textDiv.dataset.selectionBound) return;
+  textDiv.dataset.selectionBound = '1';
+
   const end = document.createElement('div');
   end.className = 'endOfContent';
   textDiv.append(end);
 
-  textDiv.addEventListener('pointerdown', () => {
+  let dragging = false;
+  let anchorY = 0;
+
+  const spanUnder = (x, y) => {
+    const node = document.elementFromPoint(x, y);
+    if (!node || !node.closest) return null;
+    const span = node.closest('.textLayer span');
+    return span && textDiv.contains(span) ? span : null;
+  };
+
+  /** The line closest to a point, preferring vertical proximity. */
+  const nearestSpan = (x, y) => {
+    let best = null;
+    let bestScore = Infinity;
+    for (const span of textDiv.querySelectorAll('span')) {
+      const r = span.getBoundingClientRect();
+      if (!r.height || !span.firstChild) continue;
+      const dy = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+      const dx = x < r.left ? r.left - x : (x > r.right ? x - r.right : 0);
+      // Vertical distance dominates: the line matters more than the column.
+      const score = dy * 1000 + dx;
+      if (score < bestScore) {
+        bestScore = score;
+        best = span;
+      }
+    }
+    return best;
+  };
+
+  textDiv.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    anchorY = e.clientY;
     textDiv.classList.add('selecting');
   });
 
-  const release = () => textDiv.classList.remove('selecting');
-  textDiv.addEventListener('pointerup', release);
-  textDiv.addEventListener('pointercancel', release);
-  // The pointer often comes up outside the page it started on.
+  const onMove = (e) => {
+    if (!dragging) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+
+    const over = spanUnder(e.clientX, e.clientY);
+    if (over) {
+      // On a line the browser is usually right, but if the focus still landed
+      // on the container the selection is already running away — pull it back
+      // onto the line under the pointer.
+      const focus = sel.focusNode;
+      const focusInSpan = focus && (focus.nodeType === Node.TEXT_NODE
+        ? focus.parentElement && focus.parentElement.closest('.textLayer span')
+        : focus.closest && focus.closest('.textLayer span'));
+      if (focusInSpan || !over.firstChild) return;
+      try {
+        sel.extend(over.firstChild, e.clientY >= anchorY ? over.firstChild.length : 0);
+      } catch { /* nothing sensible to clamp to */ }
+      return;
+    }
+
+    // In the leading between lines the pointer hits the container, and the
+    // browser runs the selection to the end of it. Pin it to the nearest line
+    // instead, in the direction the drag is going.
+    const span = nearestSpan(e.clientX, e.clientY);
+    if (!span || !span.firstChild) return;
+    const downward = e.clientY >= anchorY;
+    try {
+      sel.extend(span.firstChild, downward ? span.firstChild.length : 0);
+    } catch { /* selection spans an unexpected node; leave it alone */ }
+  };
+
+  const release = () => {
+    if (!dragging) return;
+    dragging = false;
+    textDiv.classList.remove('selecting');
+  };
+
+  window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', release);
+  window.addEventListener('pointercancel', release);
 }
 
 function evictFarPages() {
