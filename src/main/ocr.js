@@ -74,4 +74,16 @@ async function ocrPage({ docId, page, png }) {
   }
 }
 
-module.exports = { ocrPage, loadCache, helperPath };
+/** Recognize a raw image buffer — attachments, not document pages. */
+async function ocrBuffer({ bytes, name }) {
+  const ext = (path.extname(name || '') || '.png').toLowerCase();
+  const tmp = path.join(os.tmpdir(), `sludge-att-${process.pid}-${Date.now()}${ext}`);
+  await fsp.writeFile(tmp, Buffer.from(bytes));
+  try {
+    return (await recognize(tmp)).filter((l) => l.c > 0.3 && l.t.trim());
+  } finally {
+    await fsp.rm(tmp, { force: true });
+  }
+}
+
+module.exports = { ocrPage, ocrBuffer, loadCache, helperPath };

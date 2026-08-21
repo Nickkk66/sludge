@@ -35,9 +35,11 @@ contextBridge.exposeInMainWorld('api', {
     pick: () => call('questions:pick'),
     read: (filePath) => call('questions:read', filePath)
   },
+  pickAiFiles: () => call('ai:pickFiles'),
 
   ocr: {
     page: (payload) => call('ocr:page', payload),
+    buffer: (payload) => call('ocr:buffer', payload),
     cache: (docId) => call('ocr:cache', docId)
   },
 

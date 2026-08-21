@@ -450,12 +450,16 @@
             </div>
           </div>
         </div>
+        <div class="ai-attachments" id="aiAttachments" hidden></div>
         <div class="ai-passage" id="aiPassage" hidden>
           <span class="ai-passage-label">About this passage</span>
           <span class="ai-passage-text" id="aiPassageText"></span>
           <button class="ai-passage-x" id="aiPassageClear" title="Drop the passage">✕</button>
         </div>
         <div class="ai-composer">
+          <button id="aiAttach" class="ai-attach" title="Attach a PDF, text file or image — scans and photos get OCR">
+            <svg viewBox="0 0 24 24"><path d="M20.5 11.5l-8 8a5.2 5.2 0 01-7.4-7.4l8.6-8.6a3.5 3.5 0 015 5l-8.6 8.5a1.8 1.8 0 01-2.6-2.6l7.9-7.8"/></svg>
+          </button>
           <textarea id="aiInput" rows="2" placeholder="Ask about the PDF or your notes…"></textarea>
           <button id="aiSend" title="Send (↵)">
             <svg viewBox="0 0 24 24"><path d="M4 12l16-7-7 16-2-6z"/></svg>

@@ -162,6 +162,9 @@ It's a PDF app. Yes, basic. But:
   whole sheet to Markdown when you're done.
 
 **Ask a local AI**
+- Attach up to three files to a question — PDFs, text files, or **images and scans,
+  which get on-device OCR** — with the paperclip or by dropping them on the panel.
+  Answers cite them as [file: name].
 - Ranks the document's pages *and* your own notes against your question, then answers from what it found.
 - It always distinguishes the two: *"your note on p. 112 says…"* versus a page citation `[p. 112]`.
 - Citations are clickable, and a sources drawer under each answer shows exactly what the model was given.

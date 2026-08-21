@@ -280,9 +280,9 @@ function pickGroup(from) {
  * and pace word highlights from the duration model — Piper reports no word
  * boundaries of its own.
  */
-function speakPiper(sentence, voiceId) {
+function speakPiper(sentence, voiceId, group) {
   const token = ++audioToken;
-  const group = pickGroup(index) || { count: 1, start: sentence.start, end: sentence.end, text: sentence.text };
+  if (!group) group = pickGroup(index) || { count: 1, start: sentence.start, end: sentence.end, text: sentence.text };
   const text = speakableText(group.text);
 
   const model = speechWeights(group.text);
@@ -365,12 +365,16 @@ function speakCurrent() {
   // Spoken text gets the same clean-up as the cached text; the DOM keeps the
   // hyphens and ligatures the page was typeset with.
   const neural = piperVoiceId();
+  let group = null;
   if (neural) {
     stopAudio();
     stopping = true;
     synth.cancel();
     stopping = false;
-    // Shared caption work happens below for both engines, then Piper takes over.
+    // The audio unit is the group, so the captions must be too — rendering
+    // only the first sentence left most of each group with no word spans to
+    // light, which read as the highlight simply not working.
+    group = pickGroup(index) || { count: 1, start: sentence.start, end: sentence.end, text: sentence.text };
   }
 
   utterance = neural ? null : new SpeechSynthesisUtterance(speakableText(sentence.text));
@@ -384,17 +388,18 @@ function speakCurrent() {
   }
 
   wordAt = [0, 0];
-  paintReading(sentence, 0, 0);
+  const unit = group || sentence;
+  paintReading(unit, 0, 0);
   keepInView(sentence);
   emit('speech:sentence', {
-    text: sentence.text,
+    text: unit.text,
     index,
     total: sentences.length,
     page: readingPage,
     remainingMs: estimateRemaining(sentence, 0)
   });
 
-  if (neural) return speakPiper(sentence, neural);
+  if (neural) return speakPiper(sentence, neural, group);
   // The scroll above can trigger a re-render; repaint once it has settled,
   // keeping whatever word the voice has reached by then.
   requestAnimationFrame(() => setTimeout(() => {

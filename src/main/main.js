@@ -233,9 +233,26 @@ handle('questions:pick', async () => {
   return res.filePaths[0];
 });
 
+handle('ai:pickFiles', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Attach files for the AI',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Documents & images', extensions: ['pdf', 'txt', 'md', 'markdown', 'rtf', 'doc', 'docx', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'tiff', 'heic'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  });
+  return res.canceled ? [] : res.filePaths;
+});
+
 handle('questions:read', async (filePath) => {
   const ext = path.extname(filePath).toLowerCase();
   const name = path.basename(filePath);
+
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.tiff', '.tif', '.heic'].includes(ext)) {
+    const bytes = await fsp.readFile(filePath);
+    return { name, kind: 'image', bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
+  }
 
   if (ext === '.pdf') {
     // Hand the bytes back; the renderer already has pdf.js loaded to read them.
@@ -371,6 +388,7 @@ ipcMain.on('media:cancel', (_e, id) => {
 /* -------------------------------------------------------- OCR */
 
 handle('ocr:page', async (payload) => ocr.ocrPage(payload));
+handle('ocr:buffer', async (payload) => ocr.ocrBuffer(payload));
 handle('ocr:cache', async (docId) => ocr.loadCache(docId));
 
 /* -------------------------------------------------------- neural voices */
@@ -536,7 +554,7 @@ ipcMain.on('ai:ask', async (event, { streamId, query, docId, docName, model, ann
     }
 
     const { promise, controller } = ollama.chat(
-      { model, query, evidence, docName, history, profile },
+      { model, query, evidence, docName, history, profile, attachments },
       (token) => reply('ai:token', { token })
     );
     activeStreams.set(streamId, controller);

@@ -101,6 +101,102 @@ function warmModel(model) {
 /* ---------------- asking ---------------- */
 
 let passage = null;
+const attachments = [];   // { name, text, ocr, busy }
+
+function renderAttachments() {
+  const box = $('#aiAttachments');
+  box.hidden = !attachments.length;
+  box.replaceChildren(...attachments.map((a, i) => el('span', { class: `ai-chip-file${a.busy ? ' busy' : ''}` },
+    el('span', { class: 'acf-name' }, a.name),
+    el('span', { class: 'acf-meta' },
+      a.busy ? a.busy : `${(a.text || '').length.toLocaleString()} chars${a.ocr ? ' · OCR' : ''}`),
+    el('button', {
+      class: 'acf-x',
+      title: 'Remove',
+      onclick: () => { attachments.splice(i, 1); renderAttachments(); }
+    }, '✕')
+  )));
+}
+
+/** Pull the text out of an attached file, whatever it is. */
+async function extractAttachment(filePath, chip) {
+  const file = await window.api.questions.read(filePath);
+
+  if (file.kind === 'text') return { text: file.text || '', ocr: false };
+
+  if (file.kind === 'image') {
+    chip.busy = 'recognizing…';
+    renderAttachments();
+    const lines = await window.api.ocr.buffer({ bytes: file.bytes, name: file.name });
+    return { text: lines.map((l) => l.t).join('\n'), ocr: true };
+  }
+
+  // A PDF: native text where it exists, OCR where it doesn't.
+  const pdfjs = await import('../../../vendor/pdfjs/pdf.mjs');
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(file.bytes) }).promise;
+  const maxPages = Math.min(doc.numPages, 20);
+  const parts = [];
+  let usedOcr = false;
+  for (let n = 1; n <= maxPages; n++) {
+    const page = await doc.getPage(n);
+    const content = await page.getTextContent();
+    let text = content.items.map((it) => (it.str || '') + (it.hasEOL ? '\n' : '')).join('').trim();
+    if (text.length < 30) {
+      chip.busy = `recognizing page ${n} of ${maxPages}…`;
+      renderAttachments();
+      const vp1 = page.getViewport({ scale: 1 });
+      const scale = Math.min(4, (vp1.width > vp1.height ? 3200 : 2200) / vp1.width);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      await page.render({ canvasContext: canvas.getContext('2d', { alpha: false }), viewport }).promise;
+      const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+      canvas.width = canvas.height = 0;
+      const lines = await window.api.ocr.buffer({ bytes: await blob.arrayBuffer(), name: 'page.png' });
+      const { orderReading } = await import('./viewer.js');
+      text = orderReading(lines, vp1.width > vp1.height * 1.15).map((l) => l.t).join('\n');
+      usedOcr = true;
+    }
+    parts.push(text);
+  }
+  doc.destroy();
+  let text = parts.join('\n\n');
+  if (doc.numPages > maxPages) text += `\n[only the first ${maxPages} of ${doc.numPages} pages were read]`;
+  return { text, ocr: usedOcr };
+}
+
+/** Attach files by path — used by the picker, drag-drop, and tests alike. */
+export async function attachFiles(paths) {
+  for (const filePath of paths) {
+    if (attachments.length >= 3) {
+      toast('Three attached files is the limit — remove one first.');
+      break;
+    }
+    const name = filePath.split('/').pop();
+    const chip = { name, text: '', ocr: false, busy: 'reading…' };
+    attachments.push(chip);
+    renderAttachments();
+    try {
+      const got = await extractAttachment(filePath, chip);
+      chip.text = got.text;
+      chip.ocr = got.ocr;
+      chip.busy = null;
+      if (!chip.text.trim()) {
+        toast(`No readable text found in ${name}.`);
+        attachments.splice(attachments.indexOf(chip), 1);
+      }
+    } catch (err) {
+      toast(`Could not read ${name}: ${err.message || err}`);
+      attachments.splice(attachments.indexOf(chip), 1);
+    }
+    renderAttachments();
+  }
+  emit('panel:right', 'ai');
+}
+
+export const currentAttachments = () =>
+  attachments.filter((a) => !a.busy && a.text).map((a) => ({ name: a.name, text: a.text }));
 
 /** Show the selected passage as pinned context above the composer. */
 export function setPassage(text) {
@@ -120,6 +216,7 @@ export async function ask(question) {
   let q = String(question || '').trim();
   if (!q && passage) return toast('Type what you want to know about the passage.');
   if (!q) return;
+  if (attachments.some((a) => a.busy)) return toast('Still reading an attached file — a moment.');
   // A pinned passage rides along with whatever the reader actually asked.
   if (passage) {
     q = `About this passage from the document:\n"${passage.slice(0, 900)}"\n\nMy question: ${q}`;
@@ -327,6 +424,25 @@ export function initAi() {
   });
 
   $('#aiPassageClear').addEventListener('click', () => setPassage(null));
+
+  $('#aiAttach').addEventListener('click', async () => {
+    const paths = await window.api.pickAiFiles();
+    if (paths.length) attachFiles(paths);
+  });
+
+  // Dropping a file on the AI panel attaches it.
+  const panel = document.querySelector('.panel-view[data-view="ai"]');
+  panel.addEventListener('dragover', (e) => { e.preventDefault(); panel.classList.add('drop'); });
+  panel.addEventListener('dragleave', () => panel.classList.remove('drop'));
+  panel.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    panel.classList.remove('drop');
+    const paths = [...(e.dataTransfer.files || [])]
+      .map((f) => (window.api.pathForFile ? window.api.pathForFile(f) : null))
+      .filter(Boolean);
+    if (paths.length) attachFiles(paths);
+  });
 }
 
 export function resetAiThread() {

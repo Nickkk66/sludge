@@ -1167,8 +1167,9 @@ function centreOverViewer() {
   const wrap = $('#viewerWrap').getBoundingClientRect();
   if (!wrap.width) return;
 
-  // Fit the panel to the column it is sitting in.
-  const width = Math.max(320, Math.min(760, wrap.width - 48));
+  // Fit the panel to the column, but never below a readable width — it is a
+  // floating layer, so overhanging a narrow column slightly is fine.
+  const width = Math.max(420, Math.min(820, wrap.width - 40));
   tp.style.width = `${Math.round(width)}px`;
   tp.style.transform = 'none';
   tp.style.left = `${Math.round(wrap.left + (wrap.width - width) / 2)}px`;
