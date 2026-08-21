@@ -49,6 +49,13 @@ It's a PDF app. Yes, basic. But:
 - It remembers your page, scroll position, and zoom per document, and reopens there.
 - Right-click day/night to invert the page itself, for reading a white PDF at night.
 
+**Scanned textbooks work too**
+- A PDF that is pure page images — no text layer at all — gets recognized on-device
+  with Apple's Vision OCR as pages appear. Selection, highlighting, search, the AI
+  and read-aloud all wake up on it. Each page is recognized once and cached.
+- Two-page spreads are read like an open book: left page top to bottom, then the right.
+- A cover or full-page figure with nothing to say is skipped forward automatically.
+
 **Read it aloud**
 - Plays the page through your Mac's offline voices, highlighting the sentence it's on and
   the word it's saying, turning pages as it goes.

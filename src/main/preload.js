@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('api', {
     read: (filePath) => call('questions:read', filePath)
   },
 
+  ocr: {
+    page: (payload) => call('ocr:page', payload),
+    cache: (docId) => call('ocr:cache', docId)
+  },
+
   tts: {
     status: () => call('tts:status'),
     preview: (id) => call('tts:preview', id),

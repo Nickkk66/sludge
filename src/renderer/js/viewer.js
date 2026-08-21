@@ -209,6 +209,14 @@ export async function renderPage(n, force = false) {
 
   applyToolToLayer(textDiv);
   paintAnnotations(n, annoDiv);
+
+  // A page with no text layer is a scan; recognize it in the background so
+  // selection, search and the reader wake up on it.
+  if (textDiv.querySelectorAll('span').length < 3) {
+    if (ocrState.cache[n]) injectOcrSpans(n, entry);
+    else requestOcr(n);
+  }
+
   emit('page:rendered', n);
 }
 
@@ -499,6 +507,131 @@ export async function applyDeadZones(docId, zonesByPage) {
   }
   if (changed) await window.api.index.save(docId, state.pageText).catch(() => {});
   return changed;
+}
+
+/* ------------------------------------------------------------ OCR for scans */
+
+const ocrState = {
+  docId: null,
+  cache: {},          // page -> recognized lines
+  pending: new Map(), // page -> Promise
+  announced: false
+};
+
+export async function loadOcrCache(docId) {
+  ocrState.docId = docId;
+  ocrState.pending.clear();
+  ocrState.announced = false;
+  ocrState.cache = await window.api.ocr.cache(docId).catch(() => ({})) || {};
+}
+
+/**
+ * Reading order for recognized lines. A wide page is treated as an open book —
+ * the left page read top to bottom, then the right — which is exactly what a
+ * two-up scan is.
+ */
+export function orderReading(lines, wide) {
+  const sorted = (arr) => [...arr].sort((a, b) => (a.y + a.h / 2) - (b.y + b.h / 2) || a.x - b.x);
+  if (!wide) return sorted(lines);
+  const left = lines.filter((l) => l.x + l.w / 2 < 0.5);
+  const right = lines.filter((l) => l.x + l.w / 2 >= 0.5);
+  return sorted(left).concat(sorted(right));
+}
+
+/** Build selectable, readable text spans from OCR lines, in reading order. */
+function injectOcrSpans(n, entry) {
+  const lines = ocrState.cache[n];
+  if (!lines || !lines.length || !entry.textEl || entry.textEl.dataset.ocr) return;
+  entry.textEl.dataset.ocr = '1';
+
+  const wide = entry.viewport.width > entry.viewport.height * 1.15;
+  const ordered = orderReading(lines, wide);
+  const ph = entry.viewport.height;
+  const pw = entry.viewport.width;
+
+  for (const line of ordered) {
+    const span = document.createElement('span');
+    span.textContent = line.t;
+    span.style.left = `${line.x * 100}%`;
+    span.style.top = `${line.y * 100}%`;
+    span.style.fontSize = `${Math.max(6, line.h * ph * 0.82)}px`;
+    span.style.fontFamily = 'sans-serif';
+    entry.textEl.append(span);
+    // Stretch the run to the width Vision measured, the way pdf.js does.
+    const natural = span.offsetWidth;
+    if (natural > 0) {
+      span.style.transform = `scaleX(${(line.w * pw) / natural})`;
+    }
+  }
+
+  // The recognized text joins the same index the AI and search read from.
+  const text = ordered.map((l) => l.t).join('\n');
+  if (state.pageText.length >= n && state.pageText[n - 1]) {
+    state.pageText[n - 1].text = text;
+  } else {
+    state.pageText[n - 1] = { page: n, text };
+  }
+  saveIndexSoon();
+  emit('ocr:page', n);
+}
+
+let indexSaveTimer = null;
+function saveIndexSoon() {
+  clearTimeout(indexSaveTimer);
+  indexSaveTimer = setTimeout(() => {
+    if (state.docId && state.pageText.length) {
+      window.api.index.save(state.docId, state.pageText).catch(() => {});
+    }
+  }, 1500);
+}
+
+/**
+ * Recognize one rendered page. Reuses the page's own canvas — already at
+ * device-pixel resolution, which is plenty for Vision.
+ */
+export function requestOcr(n) {
+  if (ocrState.cache[n]) {
+    const entry = rendered.get(n);
+    if (entry) injectOcrSpans(n, entry);
+    return Promise.resolve(true);
+  }
+  if (ocrState.pending.has(n)) return ocrState.pending.get(n);
+
+  const entry = rendered.get(n);
+  if (!entry || !entry.canvas || !ocrState.docId) return Promise.resolve(false);
+
+  if (!ocrState.announced) {
+    ocrState.announced = true;
+    toast('Scanned pages — recognising the text on-device as you go.');
+  }
+
+  const job = new Promise((resolve) => {
+    entry.canvas.toBlob(async (blob) => {
+      try {
+        const png = await blob.arrayBuffer();
+        const lines = await window.api.ocr.page({ docId: ocrState.docId, page: n, png });
+        ocrState.cache[n] = lines;
+        const current = rendered.get(n);
+        if (current && current.textEl) injectOcrSpans(n, current);
+        resolve(lines.length > 0);
+      } catch (err) {
+        toast(`Text recognition failed on page ${n}: ${err.message || err}`);
+        resolve(false);
+      } finally {
+        ocrState.pending.delete(n);
+      }
+    }, 'image/png');
+  });
+  ocrState.pending.set(n, job);
+  return job;
+}
+
+/** True when a rendered page has no usable text layer of its own. */
+export function pageNeedsOcr(n) {
+  const entry = rendered.get(n);
+  if (!entry || !entry.textEl) return false;
+  if (entry.textEl.dataset.ocr) return false;
+  return entry.textEl.querySelectorAll('span').length < 3;
 }
 
 /* ------------------------------------------------------------ text extraction */

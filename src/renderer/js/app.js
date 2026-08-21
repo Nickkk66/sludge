@@ -2,7 +2,8 @@ import { $, $$, el, debounce, toast, fmtSize, escapeHtml } from './util.js';
 import { state, on, emit, COLORS } from './state.js';
 import {
   initViewer, loadDocument, buildTextIndex, goToPage, setZoom, stepZoom,
-  applyTool, refreshAnnotations, restorePosition, getPosition, destroy, applyDeadZones
+  applyTool, refreshAnnotations, restorePosition, getPosition, destroy, applyDeadZones,
+  loadOcrCache
 } from './viewer.js';
 import { initAnnotationUi, clearPage, closeNoteEditor, hideSelectionPopup } from './annotations.js';
 import { initNotesPanel, renderNotesPanel } from './notes.js';
@@ -164,6 +165,7 @@ async function openDocument(filePath, { newTab = true } = {}) {
       renderTabs();
     }
 
+    await loadOcrCache(doc.docId);
     await loadDocument(doc.bytes);
     $('#pageTotal').textContent = String(state.numPages);
 

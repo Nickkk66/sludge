@@ -11,6 +11,7 @@ const media = require('./media');
 const updater = require('./updater');
 const digest = require('./digest');
 const tts = require('./tts');
+const ocr = require('./ocr');
 const buildMenu = require('./menu');
 
 // Without this the dock tile, the menu bar and the About panel all say
@@ -366,6 +367,11 @@ ipcMain.on('media:cancel', (_e, id) => {
   const ctrl = activeDownloads.get(id);
   if (ctrl) ctrl.abort();
 });
+
+/* -------------------------------------------------------- OCR */
+
+handle('ocr:page', async (payload) => ocr.ocrPage(payload));
+handle('ocr:cache', async (docId) => ocr.loadCache(docId));
 
 /* -------------------------------------------------------- neural voices */
 

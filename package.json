@@ -1,7 +1,7 @@
 {
   "name": "sludge",
   "productName": "Sludge",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Offline PDF reader that reads to you, takes your notes, answers questions locally \u2014 and plays brainrot in the background.",
   "main": "src/main/main.js",
   "author": "Nickkk66",
@@ -38,6 +38,9 @@
       "icon": "assets/icon.icns",
       "identity": null
     },
-    "afterPack": "scripts/adhoc-sign.js"
+    "afterPack": "scripts/adhoc-sign.js",
+    "asarUnpack": [
+      "assets/bin/**"
+    ]
   }
 }

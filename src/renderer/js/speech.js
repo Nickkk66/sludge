@@ -1,6 +1,6 @@
 import { $, el, toast } from './util.js';
 import { state, emit, on, deadZonesOnPage } from './state.js';
-import { getPageEl, renderPage, goToPage, refreshAnnotations, viewerEl } from './viewer.js';
+import { getPageEl, renderPage, goToPage, refreshAnnotations, viewerEl, requestOcr, pageNeedsOcr } from './viewer.js';
 import { flattenTextLayer, rectsFor, splitSentences } from './textmap.js';
 import { pickVoices, needsBetterVoices, allEnglish } from './voices.js';
 
@@ -116,6 +116,9 @@ async function preparePage(pageNum) {
   await renderPage(pageNum);
   // The text layer needs a frame before ranges measure correctly.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 40)));
+  // A scanned page has no text until it has been recognized; wait for that
+  // rather than declaring it unreadable.
+  if (pageNeedsOcr(pageNum)) await requestOcr(pageNum);
   const pageEl = getPageEl(pageNum);
   const layer = pageEl && pageEl.querySelector('.textLayer');
   if (!layer) return false;
@@ -468,10 +471,21 @@ export async function play(fromPage) {
   stopping = false;
 
   const page = fromPage || state.currentPage;
-  const ok = await preparePage(page);
+  let ok = await preparePage(page);
+  // A cover or a full-page figure has nothing to say; read on from the next
+  // page that does rather than stopping at the first blank one.
+  let probe = page;
+  while (!ok && probe < Math.min(page + 5, state.numPages)) {
+    probe += 1;
+    ok = await preparePage(probe);
+  }
   if (!ok) {
     toast(`No readable text on page ${page}.`);
     return;
+  }
+  if (probe !== page) {
+    toast(`Nothing to read on page ${page} — starting from page ${probe}.`);
+    goToPage(probe, { smooth: true });
   }
   index = 0;
   spokenWords = 0;
