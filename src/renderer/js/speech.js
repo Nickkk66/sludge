@@ -197,6 +197,46 @@ function keepInView(sentence) {
 
 /* ------------------------------------------------------------ transport */
 
+/**
+ * How long each word takes to say, in relative units. Character count alone
+ * runs ahead of real speech: "1491-1607" is nine characters but is spoken as
+ * a dozen syllables, and a comma buys silence that characters don't account
+ * for. Digits and trailing punctuation carry the weight they cost aloud.
+ */
+function speechWeights(text) {
+  const words = [];
+  const re = /\S+/g;
+  let m;
+  let cum = 0;
+  while ((m = re.exec(text))) {
+    const w = m[0];
+    let units = 1.2;                       // the gap between words
+    for (const ch of w) {
+      if (/[0-9]/.test(ch)) units += 3.5;  // digits are read out as words
+      else if (/[a-zA-Z\u00C0-\u024F']/.test(ch)) units += 1;
+      else units += 0.4;
+    }
+    const tail = w.match(/[.,;:!?\u2014\u2013-]+$/);
+    if (tail) {
+      if (/[.!?]/.test(tail[0])) units += 7;
+      else if (/[;:]/.test(tail[0])) units += 5;
+      else units += 3.5;
+    }
+    cum += units;
+    words.push({ start: m.index, end: m.index + w.length, cum });
+  }
+  return { words, total: cum || 1 };
+}
+
+/** The word at a given fraction of the way through the speech. */
+function wordAtFraction(model, frac) {
+  const target = frac * model.total;
+  for (let i = 0; i < model.words.length; i++) {
+    if (model.words[i].cum >= target) return i;
+  }
+  return model.words.length - 1;
+}
+
 function stopAudio() {
   audioToken += 1;
   if (audioRaf) { cancelAnimationFrame(audioRaf); audioRaf = 0; }
@@ -217,17 +257,7 @@ function speakPiper(sentence, voiceId) {
   const token = ++audioToken;
   const text = speakableText(sentence.text);
 
-  const words = [];
-  {
-    const re = /\S+/g;
-    let m;
-    let cum = 0;
-    while ((m = re.exec(sentence.text))) {
-      cum += m[0].length + 1;
-      words.push({ start: m.index, end: m.index + m[0].length, cum });
-    }
-  }
-  const totalWeight = words.length ? words[words.length - 1].cum : 1;
+  const model = speechWeights(sentence.text);
 
   window.api.tts.synth({ voiceId, text, rate: speech.rate }).then(({ url }) => {
     if (token !== audioToken || !speech.playing) return;
@@ -250,13 +280,15 @@ function speakPiper(sentence, voiceId) {
     const tick = () => {
       if (token !== audioToken || !audioEl) return;
       const d = audioEl.duration;
-      if (d && Number.isFinite(d) && words.length) {
-        const frac = Math.min(1, audioEl.currentTime / d);
-        let i = words.findIndex((w) => w.cum / totalWeight >= frac);
-        if (i < 0) i = words.length - 1;
+      if (d && Number.isFinite(d) && model.words.length) {
+        // The synthesized wav carries a beat of trailing silence; pacing
+        // against the full duration left the last words lagging behind.
+        const effective = Math.max(0.3, d - 0.18);
+        const frac = Math.min(1, audioEl.currentTime / effective);
+        const i = wordAtFraction(model, frac);
         if (i !== lastWord) {
           lastWord = i;
-          const w = words[i];
+          const w = model.words[i];
           const at = sentence.start + w.start;
           paintReading(sentence, at, at + (w.end - w.start));
           emit('speech:word', {
@@ -338,8 +370,42 @@ function speakCurrent() {
     if (speech.playing && sentences[index] === sentence) paintReading(sentence);
   }, 120));
 
+  // Apple's premium voices often never report word boundaries through
+  // Chromium. Words are paced from the duration model until a real boundary
+  // event proves the voice provides them — real events always win.
+  let sawRealBoundary = false;
+  const model = speechWeights(sentence.text);
+  const startedAt = { t: performance.now() };
+  const estMs = Math.max(800, (model.total / (19 * speech.rate)) * 1000);
+  const u2 = utterance;
+  let pacedWord = -1;
+  const pacer = setInterval(() => {
+    if (stopping || utterance !== u2 || sawRealBoundary) return clearInterval(pacer);
+    const frac = Math.min(1, (performance.now() - startedAt.t) / estMs);
+    const i = wordAtFraction(model, frac);
+    if (i === pacedWord) return;
+    pacedWord = i;
+    const w = model.words[i];
+    if (!w) return;
+    const at = sentence.start + w.start;
+    paintReading(sentence, at, at + (w.end - w.start));
+    emit('speech:word', {
+      text: sentence.text,
+      wordStart: w.start,
+      wordEnd: w.end,
+      remainingMs: estimateRemaining(sentence, w.start)
+    });
+  }, 90);
+
+  utterance.onstart = () => {
+    utterance.onstarted = true;
+    startedAt.t = performance.now();
+  };
+
   utterance.onboundary = (e) => {
     if (e.name && e.name !== 'word') return;
+    sawRealBoundary = true;
+    clearInterval(pacer);
     const local = e.charIndex || 0;
     const len = e.charLength || wordLengthAt(sentence.text, local);
     const at = sentence.start + local;
@@ -353,6 +419,7 @@ function speakCurrent() {
   };
 
   utterance.onend = () => {
+    clearInterval(pacer);
     if (stopping) return;
     spokenWords += countWords(sentence.text);
     index += 1;
@@ -361,9 +428,9 @@ function speakCurrent() {
   };
 
   utterance.onstarted = false;
-  utterance.onstart = () => { utterance.onstarted = true; };
 
   utterance.onerror = (e) => {
+    clearInterval(pacer);
     // "interrupted" is what cancel() produces; it isn't a failure.
     if (stopping || (e.error && /interrupted|canceled|cancelled/i.test(e.error))) return;
     toast(`Read aloud stopped: ${e.error || 'speech error'}`);
