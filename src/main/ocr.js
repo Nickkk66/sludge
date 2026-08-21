@@ -25,18 +25,24 @@ function helperPath() {
 const cacheDir = () => path.join(app.getPath('userData'), 'ocr');
 const cachePath = (docId) => path.join(cacheDir(), `${docId}.json`);
 
+// v3: high-resolution render, recognized in tiles. Earlier versions dropped
+// whole paragraphs on two-page spreads and are quietly discarded.
+const CACHE_V = 3;
+
 async function loadCache(docId) {
   try {
-    return JSON.parse(await fsp.readFile(cachePath(docId), 'utf8'));
+    const data = JSON.parse(await fsp.readFile(cachePath(docId), 'utf8'));
+    if (data && data.v === CACHE_V) return data.pages || {};
+    return {};
   } catch {
     return {};
   }
 }
 
-async function saveCache(docId, cache) {
+async function saveCache(docId, pages) {
   await fsp.mkdir(cacheDir(), { recursive: true });
   const tmp = `${cachePath(docId)}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(cache), 'utf8');
+  await fsp.writeFile(tmp, JSON.stringify({ v: CACHE_V, pages }), 'utf8');
   await fsp.rename(tmp, cachePath(docId));
 }
 

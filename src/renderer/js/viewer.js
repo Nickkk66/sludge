@@ -605,23 +605,38 @@ export function requestOcr(n) {
     toast('Scanned pages — recognising the text on-device as you go.');
   }
 
-  const job = new Promise((resolve) => {
-    entry.canvas.toBlob(async (blob) => {
-      try {
-        const png = await blob.arrayBuffer();
-        const lines = await window.api.ocr.page({ docId: ocrState.docId, page: n, png });
-        ocrState.cache[n] = lines;
-        const current = rendered.get(n);
-        if (current && current.textEl) injectOcrSpans(n, current);
-        resolve(lines.length > 0);
-      } catch (err) {
-        toast(`Text recognition failed on page ${n}: ${err.message || err}`);
-        resolve(false);
-      } finally {
-        ocrState.pending.delete(n);
-      }
-    }, 'image/png');
-  });
+  const job = (async () => {
+    try {
+      // Recognition quality lives and dies on input resolution. The display
+      // canvas is whatever the zoom happens to be — at fit-width a two-page
+      // spread gives each printed line ~12 px, and Vision garbles or drops
+      // whole paragraphs. Render the page again, offscreen, at a size chosen
+      // for the recognizer rather than the screen.
+      const page = await state.pdf.getPage(n);
+      const vp1 = page.getViewport({ scale: 1 });
+      const target = vp1.width > vp1.height ? 3200 : 2200;   // wide = two-up spread
+      const scale = Math.min(4, target / vp1.width);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      await page.render({ canvasContext: canvas.getContext('2d', { alpha: false }), viewport }).promise;
+
+      const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+      canvas.width = canvas.height = 0;
+      const png = await blob.arrayBuffer();
+      const lines = await window.api.ocr.page({ docId: ocrState.docId, page: n, png });
+      ocrState.cache[n] = lines;
+      const current = rendered.get(n);
+      if (current && current.textEl) injectOcrSpans(n, current);
+      return lines.length > 0;
+    } catch (err) {
+      toast(`Text recognition failed on page ${n}: ${err.message || err}`);
+      return false;
+    } finally {
+      ocrState.pending.delete(n);
+    }
+  })();
   ocrState.pending.set(n, job);
   return job;
 }

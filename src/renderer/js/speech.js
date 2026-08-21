@@ -678,6 +678,11 @@ export function setRate(rate) {
     stopAudio();
     stopping = false;
     speakCurrent();
+  } else if (speech.paused) {
+    stopping = true;
+    synth.cancel();
+    stopAudio();
+    stopping = false;
   }
   emit('speech:changed');
 }
@@ -691,6 +696,13 @@ export function setVoice(uri) {
     stopAudio();
     stopping = false;
     speakCurrent();
+  } else if (speech.paused) {
+    // Resuming would continue the old voice's audio. Throw that away, so the
+    // next play restarts this sentence in the new voice.
+    stopping = true;
+    synth.cancel();
+    stopAudio();
+    stopping = false;
   }
 }
 
