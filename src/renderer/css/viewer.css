@@ -409,13 +409,6 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
 #viewerWrap.tool-deadzone .textLayer { user-select: none; pointer-events: none; }
 .tp-size.active { background: var(--accent-soft); color: var(--accent); }
 
-/* Selection sentinel — see bindSelectionFix in viewer.js. */
-.textLayer .endOfContent {
-  display: block;
-  position: absolute;
-  inset: 100% 0 0;
-  z-index: -1;
-  cursor: default;
-  user-select: none;
-}
-.textLayer.selecting .endOfContent { top: 0; }
+/* Selection is script-driven (see initCustomSelection). The background must
+   not start a native selection of its own. */
+#pages { user-select: none; }

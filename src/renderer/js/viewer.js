@@ -205,8 +205,7 @@ export async function renderPage(n, force = false) {
     });
     await textLayer.render();
     entry.textLayer = textLayer;
-    bindSelectionFix(textDiv);
-  } catch { /* a page without extractable text still renders fine */ }
+    } catch { /* a page without extractable text still renders fine */ }
 
   applyToolToLayer(textDiv);
   paintAnnotations(n, annoDiv);
@@ -214,183 +213,114 @@ export async function renderPage(n, force = false) {
 }
 
 /**
- * Keep a drag-selection from running away down the page.
+ * Text selection on the PDF is built by hand rather than left to the browser.
  *
- * pdf.js positions each text run absolutely and sizes it to the glyphs, so the
- * leading between lines belongs to no span at all. A pointer in that gap hits
- * the container instead, and because the container's content ends after the
- * last span in DOM order — not in reading order — the browser extends the
- * selection to the end of the page.
+ * pdf.js absolutely-positions each text run and sizes it to its glyphs, so the
+ * space between lines and past the ends of lines belongs to the container. The
+ * browser's native drag-selection, on reaching that space, extends to the end
+ * of the container in DOM order — the entire page. Correcting it after the
+ * fact fights the browser's own drag state machine: a recorded real drag
+ * showed the guard firing 427 times and still losing at release.
  *
- * Two things stop that: a sentinel that gives a downward drag something to
- * land on, and holding the selection still whenever the pointer is between
- * lines rather than on one.
+ * So the native drag never starts (the mousedown's default action is
+ * cancelled) and the selection is driven from pointer positions directly.
+ * Every position maps to the nearest character, which leaves nowhere off-text
+ * for the focus to escape to. Double- and triple-click word and paragraph
+ * selection, and shift-click extension, stay native.
  */
-function bindSelectionFix(textDiv) {
-  if (textDiv.dataset.selectionBound) return;
-  textDiv.dataset.selectionBound = '1';
-
-  const end = document.createElement('div');
-  end.className = 'endOfContent';
-  textDiv.append(end);
-
+function initCustomSelection() {
+  const pages = pagesEl();
   let dragging = false;
-  let good = null;        // last selection made from a real character position
-  let restoring = false;  // guards the selectionchange we cause ourselves
-  let lastX = 0;
-  let lastY = 0;
+  let anchor = null;
 
-  /** True only for a position inside a text run — the layer itself doesn't count. */
-  const onCharacter = (node) => {
-    if (!node || !textDiv.contains(node)) return false;
-    const host = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return !!(host && host.closest && host.closest('.textLayer span'));
-  };
+  /** The character position for a point: exact when on text, nearest otherwise. */
+  const caretAt = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    const hitSpan = el && el.closest && el.closest('.textLayer span');
+    if (hitSpan && document.caretRangeFromPoint) {
+      const c = document.caretRangeFromPoint(x, y);
+      if (c && c.startContainer.nodeType === Node.TEXT_NODE) {
+        return { node: c.startContainer, offset: c.startOffset };
+      }
+    }
 
-  const spanUnder = (x, y) => {
-    const node = document.elementFromPoint(x, y);
-    if (!node || !node.closest) return null;
-    const span = node.closest('.textLayer span');
-    return span && textDiv.contains(span) ? span : null;
-  };
-
-  /** The text run nearest a point, weighting the line far above the column. */
-  const nearestSpan = (x, y) => {
+    // Off every character. Find the nearest text run on any rendered page,
+    // weighting the line far above the column so the gap between lines maps
+    // to one of its neighbours, not to a line further down with a longer reach.
     let best = null;
     let bestScore = Infinity;
-    for (const span of textDiv.querySelectorAll('span')) {
+    for (const span of pages.querySelectorAll('.textLayer span')) {
+      if (!span.firstChild) continue;
       const r = span.getBoundingClientRect();
-      if (!r.height || !span.firstChild) continue;
+      if (!r.height) continue;
       const dy = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
       const dx = x < r.left ? r.left - x : (x > r.right ? x - r.right : 0);
       const score = dy * 1000 + dx;
       if (score < bestScore) {
         bestScore = score;
-        best = span;
+        best = { span, rect: r };
       }
     }
-    return best;
-  };
+    if (!best) return null;
 
-  /**
-   * The character position the pointer is closest to, when it is not on one.
-   * The point is pulled onto the nearest line and clamped inside it, so
-   * dragging past the end of a line reaches the end of that line rather than
-   * the end of the page.
-   */
-  const caretNearPoint = (x, y) => {
-    const span = nearestSpan(x, y);
-    if (!span || !span.firstChild) return null;
-    const r = span.getBoundingClientRect();
-    const text = span.firstChild;
-
-    // Past either end of the run, aim at the end itself. Probing with
-    // caretRangeFromPoint inside the last glyph lands before it, which leaves
-    // a drag past the end of a line one character short.
-    if (x > r.right) return { node: text, offset: text.length };
-    if (x < r.left) return { node: text, offset: 0 };
-
-    if (!document.caretRangeFromPoint) return { node: text, offset: text.length };
-    const caret = document.caretRangeFromPoint(x, r.top + r.height / 2);
-    if (caret && onCharacter(caret.startContainer)) {
-      return { node: caret.startContainer, offset: caret.startOffset };
+    const text = best.span.firstChild;
+    // Past either end of the run, the position is that end — probing inside
+    // the outermost glyph lands before it and leaves a drag a character short.
+    if (x >= best.rect.right) return { node: text, offset: text.length };
+    if (x <= best.rect.left) return { node: text, offset: 0 };
+    if (document.caretRangeFromPoint) {
+      const c = document.caretRangeFromPoint(x, best.rect.top + best.rect.height / 2);
+      if (c && c.startContainer.nodeType === Node.TEXT_NODE) {
+        return { node: c.startContainer, offset: c.startOffset };
+      }
     }
     return { node: text, offset: text.length };
   };
 
-  const remember = (sel) => {
-    if (!sel.rangeCount) return;
-    if (!onCharacter(sel.anchorNode) || !onCharacter(sel.focusNode)) return;
-    good = {
-      anchorNode: sel.anchorNode,
-      anchorOffset: sel.anchorOffset,
-      focusNode: sel.focusNode,
-      focusOffset: sel.focusOffset
-    };
+  /** Native selection kept the viewport moving on long drags; so do we. */
+  const autoScroll = (e) => {
+    const wrap = viewerEl();
+    const r = wrap.getBoundingClientRect();
+    const margin = 36;
+    if (e.clientY < r.top + margin) wrap.scrollTop -= Math.min(24, r.top + margin - e.clientY);
+    else if (e.clientY > r.bottom - margin) wrap.scrollTop += Math.min(24, e.clientY - (r.bottom - margin));
   };
 
-  const restore = (sel) => {
-    if (!good || !good.anchorNode.isConnected || !good.focusNode.isConnected) return;
-    restoring = true;
-    try {
-      sel.setBaseAndExtent(good.anchorNode, good.anchorOffset, good.focusNode, good.focusOffset);
-    } catch { /* the nodes moved out from under us */ } finally {
-      restoring = false;
-    }
-  };
+  pages.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.shiftKey || e.detail > 1) return;
+    if (state.tool !== 'select' && state.tool !== 'highlight') return;
+    if (e.target.closest('.hl, .pin, .deadzone')) return;
+    if (!e.target.closest('.textLayer')) return;
 
-  /** Pull a selection that has escaped back onto the nearest real character. */
-  const clampTo = (sel, x, y) => {
-    const at = caretNearPoint(x, y);
-    if (!at) return restore(sel);
-    restoring = true;
-    try {
-      sel.extend(at.node, at.offset);
-      restoring = false;
-      remember(sel);
-    } catch {
-      restoring = false;
-      restore(sel);
-    }
-  };
-
-  textDiv.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
+    // Cancelling the default action is what keeps the native drag-selection
+    // from ever starting; mouseup and click still fire, so the selection
+    // popup and click-to-read are unaffected.
+    e.preventDefault();
     dragging = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
-    textDiv.classList.add('selecting');
-    good = null;
-    const caret = document.caretRangeFromPoint
-      ? document.caretRangeFromPoint(e.clientX, e.clientY)
-      : null;
-    if (caret && onCharacter(caret.startContainer)) {
-      good = {
-        anchorNode: caret.startContainer,
-        anchorOffset: caret.startOffset,
-        focusNode: caret.startContainer,
-        focusOffset: caret.startOffset
-      };
-    }
+    anchor = caretAt(e.clientX, e.clientY);
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
   });
 
-  /**
-   * pdf.js sizes each span to its glyphs, so the leading between lines and the
-   * space past the end of a line belong to no span. A pointer there hits the
-   * container, and because the container's content ends after the last span in
-   * DOM order rather than reading order, the browser runs the selection to the
-   * end of the page. Off a character, the selection is clamped to the nearest
-   * one instead — which still lets a drag reach the end of its line.
-   */
-  const onMove = (e) => {
-    if (!dragging) return;
-    lastX = e.clientX;
-    lastY = e.clientY;
+  window.addEventListener('pointermove', (e) => {
+    if (!dragging || !anchor) return;
+    autoScroll(e);
+    const focus = caretAt(e.clientX, e.clientY);
+    if (!focus) return;
     const sel = window.getSelection();
     if (!sel) return;
-    if (spanUnder(e.clientX, e.clientY)) remember(sel);
-    else clampTo(sel, e.clientX, e.clientY);
-  };
-
-  // The browser also revises the selection outside pointermove.
-  const onSelectionChange = () => {
-    if (!dragging || restoring) return;
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    if (onCharacter(sel.focusNode)) remember(sel);
-    else clampTo(sel, lastX, lastY);
-  };
+    try {
+      sel.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset);
+    } catch { /* a node was evicted mid-drag; the next move recovers */ }
+  });
 
   const release = () => {
-    if (!dragging) return;
     dragging = false;
-    textDiv.classList.remove('selecting');
+    anchor = null;
   };
-
-  window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', release);
   window.addEventListener('pointercancel', release);
-  document.addEventListener('selectionchange', onSelectionChange);
+  window.addEventListener('blur', release);
 }
 
 function evictFarPages() {
@@ -638,6 +568,7 @@ export function cleanExtractedText(raw) {
 
 export function initViewer() {
   viewerEl().addEventListener('scroll', onScroll, { passive: true });
+  initCustomSelection();
 
   window.addEventListener('resize', throttle(() => {
     if (!state.pdf) return;

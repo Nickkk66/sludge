@@ -19,6 +19,10 @@ exports.default = async function adhocSign(context) {
     `${context.packager.appInfo.productFilename}.app`
   );
   try {
+    // codesign refuses bundles carrying extended attributes ("resource fork,
+    // Finder information, or similar detritus not allowed") — and macOS stamps
+    // com.apple.provenance onto everything the build touches. Strip them first.
+    execFileSync('xattr', ['-cr', appPath], { stdio: 'pipe' });
     execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'pipe' });
     execFileSync('codesign', ['--verify', appPath], { stdio: 'pipe' });
     console.log(`  • ad-hoc signed ${path.basename(appPath)}`);
