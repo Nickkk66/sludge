@@ -1003,6 +1003,12 @@ function wireSpeechBar() {
 
   on('speech:voices', fillVoices);
   on('tts:changed', fillVoices);
+  // The neural voices take a moment to generate; say so instead of sitting
+  // silent while the reader concludes the button is broken.
+  on('speech:generating', (busy) => {
+    if (busy) $('#spNow').textContent = '✨ preparing the voice…';
+  });
+
   on('speech:changed', () => {
     if (speech.playing || speech.paused) {
       if (bar.hidden) fillVoices();
@@ -1425,11 +1431,14 @@ function wireKeyboard() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)
       || document.activeElement.isContentEditable;
 
-    // Space pauses the voice from anywhere except a text field — it's the one
-    // control worth having always to hand while listening.
-    if (e.code === 'Space' && !typing && (speech.playing || speech.paused)) {
+    // Space belongs to the reader and nothing else. A focused button would
+    // also activate on space (double-toggling play, or flipping a tool and
+    // lighting its ribbon button); blur it and swallow the key.
+    if (e.code === 'Space' && !typing) {
+      const focused = document.activeElement;
+      if (focused && focused.tagName === 'BUTTON') focused.blur();
       e.preventDefault();
-      speechToggle();
+      if (speech.playing || speech.paused) speechToggle();
       return;
     }
 
@@ -1453,10 +1462,7 @@ function wireKeyboard() {
       case 'p': if (!e.metaKey) setTool('pin'); break;
       case 'd': if (!e.metaKey) setTool('deadzone'); break;
       case 'r': if (!e.metaKey) { $('#btnRead').click(); } break;
-      case ' ':
-        e.preventDefault();
-        setTool(state.tool === 'hand' ? 'select' : 'hand');
-        break;
+
       default: break;
     }
   });

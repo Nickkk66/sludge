@@ -248,25 +248,55 @@ function stopAudio() {
 }
 
 /**
- * Speak one sentence through Piper: synthesise to a wav, play it, and emulate
- * word boundaries from playback time — Piper reports none, so words are paced
- * by their share of the sentence's characters. Close enough that the caption
- * highlight feels attached to the voice.
+ * Bundle a run of sentences into one synthesis unit. The engine reloads its
+ * whole model on every call — a second per sentence on the medium voices and
+ * several on the high ones — so speaking sentence-by-sentence stuttered and
+ * left seconds of dead silence at the start. A group of a few sentences costs
+ * one load, and prefetching the next group hides the rest entirely.
+ */
+function pickGroup(from) {
+  const group = { count: 0, parts: [] };
+  let words = 0;
+  for (let i = from; i < sentences.length && group.count < 4; i++) {
+    const sent = sentences[i];
+    group.parts.push(sent);
+    group.count += 1;
+    words += countWords(sent.text);
+    if (words >= 38) break;
+  }
+  if (!group.parts.length) return null;
+  const first = group.parts[0];
+  const last = group.parts[group.parts.length - 1];
+  return {
+    count: group.count,
+    start: first.start,
+    end: last.end,
+    text: mapped.flat.slice(first.start, last.end)
+  };
+}
+
+/**
+ * Speak a group of sentences through Piper: synthesise to one wav, play it,
+ * and pace word highlights from the duration model — Piper reports no word
+ * boundaries of its own.
  */
 function speakPiper(sentence, voiceId) {
   const token = ++audioToken;
-  const text = speakableText(sentence.text);
+  const group = pickGroup(index) || { count: 1, start: sentence.start, end: sentence.end, text: sentence.text };
+  const text = speakableText(group.text);
 
-  const model = speechWeights(sentence.text);
+  const model = speechWeights(group.text);
+  emit('speech:generating', true);
 
   window.api.tts.synth({ voiceId, text, rate: speech.rate }).then(({ url }) => {
+    emit('speech:generating', false);
     if (token !== audioToken || !speech.playing) return;
     audioEl = new Audio(url);
 
     audioEl.onended = () => {
       if (stopping || token !== audioToken) return;
-      spokenWords += countWords(sentence.text);
-      index += 1;
+      spokenWords += countWords(group.text);
+      index += group.count;
       if (index < sentences.length) speakCurrent();
       else advancePage();
     };
@@ -289,10 +319,10 @@ function speakPiper(sentence, voiceId) {
         if (i !== lastWord) {
           lastWord = i;
           const w = model.words[i];
-          const at = sentence.start + w.start;
-          paintReading(sentence, at, at + (w.end - w.start));
+          const at = group.start + w.start;
+          paintReading(group, at, at + (w.end - w.start));
           emit('speech:word', {
-            text: sentence.text,
+            text: group.text,
             wordStart: w.start,
             wordEnd: w.end,
             remainingMs: estimateRemaining(sentence, w.start)
@@ -304,8 +334,8 @@ function speakPiper(sentence, voiceId) {
 
     audioEl.play().then(() => {
       audioRaf = requestAnimationFrame(tick);
-      // Have the next sentence ready before this one runs out.
-      const next = sentences[index + 1];
+      // Have the next group ready before this one runs out.
+      const next = pickGroup(index + group.count);
       if (next) {
         window.api.tts.synth({ voiceId, text: speakableText(next.text), rate: speech.rate }).catch(() => {});
       }
@@ -313,6 +343,7 @@ function speakPiper(sentence, voiceId) {
       if (token === audioToken) { toast('Could not start playback.'); stop(); }
     });
   }).catch((err) => {
+    emit('speech:generating', false);
     if (token !== audioToken) return;
     const msg = String((err && err.message) || err);
     if (/not installed/i.test(msg)) {
