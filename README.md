@@ -58,7 +58,15 @@ It's a PDF app. Yes, basic. But:
 - Speed and voice live in the top bar; pause any time to highlight and annotate, then resume.
 - Space plays and pauses; `⌘R` starts it.
 
-**About the voices**
+**Natural voices**
+- Neural voices that read like a person — Piper models running through sherpa-onnx,
+  fully offline once downloaded. Six to pick from: American and British, male and female.
+- **Every voice has a ▶ sample you can hear before downloading it** (60–120 MB each).
+  "✨ Get natural voices…" in the voice dropdown opens the picker.
+- Word-by-word caption highlighting is paced from the audio, so it stays attached
+  to the voice.
+
+**About the system voices**
 - The voice list is narrowed to four — American and British, male and female — rather than
   the 180 your Mac reports, most of which are novelty voices like Bells and Zarvox.
 - macOS keeps its natural-sounding voices behind a download. Sludge detects when only the

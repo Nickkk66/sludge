@@ -25,6 +25,7 @@ import { initQuestions } from './questions.js';
 import { initZones, selectZone, clearSelection } from './zones.js';
 import { initTabs, tabs, addTab, setActive, removeTab, syncActive, activeTab, findTabByPath, render as renderTabs } from './tabs.js';
 import { initSettings, openSettings, setSettingsModels } from './settings.js';
+import { initVoiceManager, openVoiceManager, neuralVoices, refreshNeural } from './voicemgr.js';
 import { initTour, startTour, tourSeen } from './tour.js';
 import { initStory } from './story.js';
 import { BUILT_IN, applyLayout, captureLayout, customLayouts, saveCurrentAs, removeCustom,
@@ -57,6 +58,8 @@ async function boot() {
   initTabs();
   wireRightResize();
   initSettings();
+  initVoiceManager();
+  refreshNeural();
   initTour();
   initStory();
   wireTabs();
@@ -942,6 +945,11 @@ function wireSpeechBar() {
   rate.addEventListener('change', () => setRate(rate.value));
 
   $('#spVoice').addEventListener('change', (e) => {
+    if (e.target.value === '__neural__') {
+      openVoiceManager();
+      fillVoices();
+      return;
+    }
     if (e.target.value === '__all__') {
       showAllVoices = true;
       fillVoices();
@@ -992,6 +1000,7 @@ function wireSpeechBar() {
   $('#spFollow').addEventListener('change', (e) => { speech.followScroll = e.target.checked; });
 
   on('speech:voices', fillVoices);
+  on('tts:changed', fillVoices);
   on('speech:changed', () => {
     if (speech.playing || speech.paused) {
       if (bar.hidden) fillVoices();
@@ -1033,12 +1042,18 @@ function fillVoices() {
     return;
   }
 
-  // Four choices — US and UK, male and female — rather than 180 system voices.
+  // Neural voices lead when installed; then the four system picks.
+  const neural = neuralVoices();
   select.replaceChildren(
+    ...neural.map((v) => el('option', {
+      value: `piper:${v.id}`,
+      selected: speech.voiceURI === `piper:${v.id}`
+    }, `✨ ${v.label}`)),
     ...curated.map((c) => el('option', {
       value: c.voice.voiceURI,
       selected: c.voice.voiceURI === speech.voiceURI
     }, describeVoice(c))),
+    el('option', { value: '__neural__' }, '✨ Get natural voices…'),
     el('option', { value: '__all__' }, 'Show every English voice…')
   );
 
@@ -1083,7 +1098,6 @@ function renderTeleprompterLine(text) {
   if (last < text.length) parts.push(document.createTextNode(text.slice(last)));
   const scroll = el('div', { class: 'tp-scroll' }, ...parts);
   line.replaceChildren(scroll);
-  tpOffset = 0;
   centreTeleprompter(null);
 }
 
@@ -1092,30 +1106,19 @@ function renderTeleprompterLine(text) {
  * Adjusts relative to the current offset, which avoids having to reason about
  * how flexbox has already positioned the block.
  */
-let tpOffset = 0;
-
 function centreTeleprompter(word) {
   const line = $('#tpLine');
   const scroll = line.querySelector('.tp-scroll');
   if (!scroll) return;
-
   if (!word) {
-    tpOffset = 0;
-    scroll.style.transform = '';
-    return;
+    // No word yet: centre the first one, so the sentence starts centred too.
+    word = scroll.querySelector('.w');
+    if (!word) { scroll.style.transform = ''; return; }
   }
-
-  const lineBox = line.getBoundingClientRect();
-  const wordBox = word.getBoundingClientRect();
-  if (!lineBox.height || !wordBox.height) return;
-
-  const lineCentre = lineBox.top + lineBox.height / 2;
-  const wordCentre = wordBox.top + wordBox.height / 2;
-  const delta = lineCentre - wordCentre;
-  if (Math.abs(delta) < 1) return;
-
-  tpOffset += delta;
-  scroll.style.transform = `translateY(${Math.round(tpOffset)}px)`;
+  // offsetTop is layout truth — reading getBoundingClientRect mid-transition
+  // fed the animation's own position back into the next offset and drifted.
+  const target = line.clientHeight / 2 - (word.offsetTop + word.offsetHeight / 2);
+  scroll.style.transform = `translateY(${Math.round(target)}px)`;
 }
 
 function markTeleprompterWord(start, end) {

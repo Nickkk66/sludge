@@ -233,15 +233,24 @@ function initCustomSelection() {
   let dragging = false;
   let anchor = null;
 
+  /** A caret is only trusted if it landed inside a text run on a page. Overlays
+   * — the selection popup, the caption panel, a modal — sit over the text, and
+   * a caret probed through them lands in THEIR text, which would make the
+   * selection span from the page to the overlay: most of the document. */
+  const caretOnText = (c) => {
+    if (!c || c.startContainer.nodeType !== Node.TEXT_NODE) return null;
+    const host = c.startContainer.parentElement;
+    if (!host || !host.closest('.textLayer span') || !pages.contains(host)) return null;
+    return { node: c.startContainer, offset: c.startOffset };
+  };
+
   /** The character position for a point: exact when on text, nearest otherwise. */
   const caretAt = (x, y) => {
     const el = document.elementFromPoint(x, y);
     const hitSpan = el && el.closest && el.closest('.textLayer span');
     if (hitSpan && document.caretRangeFromPoint) {
-      const c = document.caretRangeFromPoint(x, y);
-      if (c && c.startContainer.nodeType === Node.TEXT_NODE) {
-        return { node: c.startContainer, offset: c.startOffset };
-      }
+      const got = caretOnText(document.caretRangeFromPoint(x, y));
+      if (got) return got;
     }
 
     // Off every character. Find the nearest text run on any rendered page,
@@ -269,12 +278,13 @@ function initCustomSelection() {
     if (x >= best.rect.right) return { node: text, offset: text.length };
     if (x <= best.rect.left) return { node: text, offset: 0 };
     if (document.caretRangeFromPoint) {
-      const c = document.caretRangeFromPoint(x, best.rect.top + best.rect.height / 2);
-      if (c && c.startContainer.nodeType === Node.TEXT_NODE) {
-        return { node: c.startContainer, offset: c.startOffset };
-      }
+      const got = caretOnText(document.caretRangeFromPoint(x, best.rect.top + best.rect.height / 2));
+      if (got) return got;
     }
-    return { node: text, offset: text.length };
+    // The line is under an overlay, so it can't be probed. Estimate the
+    // character from the pointer's position along the run instead.
+    const frac = (x - best.rect.left) / Math.max(1, best.rect.width);
+    return { node: text, offset: Math.round(frac * text.length) };
   };
 
   /** Native selection kept the viewport moving on long drags; so do we. */

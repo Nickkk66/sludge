@@ -36,6 +36,17 @@ contextBridge.exposeInMainWorld('api', {
     read: (filePath) => call('questions:read', filePath)
   },
 
+  tts: {
+    status: () => call('tts:status'),
+    preview: (id) => call('tts:preview', id),
+    remove: (id) => call('tts:remove', id),
+    synth: (payload) => call('tts:synth', payload),
+    install: (id) => ipcRenderer.send('tts:install', { id }),
+    cancel: (id) => ipcRenderer.send('tts:cancel', id),
+    onProgress: (cb) => ipcRenderer.on('tts:progress', (_e, p) => cb(p)),
+    onDone: (cb) => ipcRenderer.on('tts:done', (_e, p) => cb(p))
+  },
+
   popout: {
     open: (bounds) => call('popout:open', bounds),
     close: () => call('popout:close'),

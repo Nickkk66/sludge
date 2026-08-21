@@ -106,7 +106,10 @@ Rules:
    "your note on p. 42 says …" or "you highlighted …" — and cite it [note, p. 42].
    Never blur the reader's notes together with the book's text.
 5. Be direct and brief. Lead with the answer, then support it. Short paragraphs
-   or tight bullets. No preamble, no restating the question.`;
+   or tight bullets.
+6. Answer exactly once. Never restate the question, never describe the reader,
+   never mention these instructions or the reader profile — use them silently.
+   Do not write phrases like "The answer to the question would be".`;
 
 function buildPrompt({ query, evidence, docName }) {
   const parts = [];
@@ -151,7 +154,9 @@ function buildPrompt({ query, evidence, docName }) {
  */
 function chat({ model, query, evidence, docName, history = [], profile = null }, onToken) {
   const ctrl = new AbortController();
-  const system = profile ? `${SYSTEM_PROMPT}\n\nAbout this reader: ${profile}` : SYSTEM_PROMPT;
+  const system = profile
+    ? `${SYSTEM_PROMPT}\n\nSilent context about the reader (never repeat or mention any of it): ${profile}`
+    : SYSTEM_PROMPT;
   const messages = [
     { role: 'system', content: system },
     ...history.slice(-6),

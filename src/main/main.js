@@ -10,6 +10,7 @@ const { retrieve } = require('./retrieval');
 const media = require('./media');
 const updater = require('./updater');
 const digest = require('./digest');
+const tts = require('./tts');
 const buildMenu = require('./menu');
 
 // Without this the dock tile, the menu bar and the About panel all say
@@ -363,6 +364,38 @@ ipcMain.on('media:download', async (event, { id }) => {
 
 ipcMain.on('media:cancel', (_e, id) => {
   const ctrl = activeDownloads.get(id);
+  if (ctrl) ctrl.abort();
+});
+
+/* -------------------------------------------------------- neural voices */
+
+const ttsDownloads = new Map();
+
+handle('tts:status', async () => tts.status());
+handle('tts:preview', async (id) => tts.preview(id));
+handle('tts:remove', async (id) => tts.removeVoice(id));
+handle('tts:synth', async (payload) => tts.synth(payload));
+
+ipcMain.on('tts:install', async (event, { id }) => {
+  const send = (channel, payload) => {
+    if (!event.sender.isDestroyed()) event.sender.send(channel, { id, ...payload });
+  };
+  if (ttsDownloads.has(id)) return;
+  const ctrl = new AbortController();
+  ttsDownloads.set(id, ctrl);
+  try {
+    await tts.installVoice(id, (p) => send('tts:progress', p), ctrl.signal);
+    send('tts:done', { ok: true });
+  } catch (err) {
+    const msg = String((err && err.message) || err);
+    send('tts:done', { ok: false, error: /abort/i.test(msg) ? 'Cancelled' : msg });
+  } finally {
+    ttsDownloads.delete(id);
+  }
+});
+
+ipcMain.on('tts:cancel', (_e, id) => {
+  const ctrl = ttsDownloads.get(id);
   if (ctrl) ctrl.abort();
 });
 

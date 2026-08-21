@@ -342,7 +342,7 @@ html[data-theme="light"] #teleprompter { background: rgba(255,255,255,.96); }
   display: flex; align-items: center; justify-content: center;
   position: relative;
 }
-.tp-scroll { width: 100%; transition: transform .22s ease-out; }
+.tp-scroll { width: 100%; position: relative; transition: transform .18s ease-out; }
 .tp-line .w { transition: color .08s, background .08s; border-radius: 4px; padding: 0 1px; }
 .tp-line .w.said { color: var(--fg-3); }
 .tp-line .w.now {

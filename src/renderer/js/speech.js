@@ -24,8 +24,15 @@ let index = 0;            // sentence being spoken
 let utterance = null;
 let readingPage = 0;
 let stopping = false;
+// Neural (Piper) playback: synthesised wav played through an audio element.
+let audioEl = null;
+let audioRaf = 0;
+let audioToken = 0;
 // Where the voice is inside the current sentence, so a repaint can restore it.
 let wordAt = [0, 0];
+
+export const piperVoiceId = () =>
+  (speech.voiceURI && speech.voiceURI.startsWith('piper:')) ? speech.voiceURI.slice(6) : null;
 
 export const speech = {
   label: '',
@@ -187,19 +194,128 @@ function keepInView(sentence) {
 
 /* ------------------------------------------------------------ transport */
 
+function stopAudio() {
+  audioToken += 1;
+  if (audioRaf) { cancelAnimationFrame(audioRaf); audioRaf = 0; }
+  if (audioEl) {
+    try { audioEl.pause(); } catch { /* already gone */ }
+    audioEl.removeAttribute('src');
+    audioEl = null;
+  }
+}
+
+/**
+ * Speak one sentence through Piper: synthesise to a wav, play it, and emulate
+ * word boundaries from playback time — Piper reports none, so words are paced
+ * by their share of the sentence's characters. Close enough that the caption
+ * highlight feels attached to the voice.
+ */
+function speakPiper(sentence, voiceId) {
+  const token = ++audioToken;
+  const text = speakableText(sentence.text);
+
+  const words = [];
+  {
+    const re = /\S+/g;
+    let m;
+    let cum = 0;
+    while ((m = re.exec(sentence.text))) {
+      cum += m[0].length + 1;
+      words.push({ start: m.index, end: m.index + m[0].length, cum });
+    }
+  }
+  const totalWeight = words.length ? words[words.length - 1].cum : 1;
+
+  window.api.tts.synth({ voiceId, text, rate: speech.rate }).then(({ url }) => {
+    if (token !== audioToken || !speech.playing) return;
+    audioEl = new Audio(url);
+
+    audioEl.onended = () => {
+      if (stopping || token !== audioToken) return;
+      spokenWords += countWords(sentence.text);
+      index += 1;
+      if (index < sentences.length) speakCurrent();
+      else advancePage();
+    };
+    audioEl.onerror = () => {
+      if (stopping || token !== audioToken) return;
+      toast('Playback failed — check the voice in the picker.');
+      stop();
+    };
+
+    let lastWord = -1;
+    const tick = () => {
+      if (token !== audioToken || !audioEl) return;
+      const d = audioEl.duration;
+      if (d && Number.isFinite(d) && words.length) {
+        const frac = Math.min(1, audioEl.currentTime / d);
+        let i = words.findIndex((w) => w.cum / totalWeight >= frac);
+        if (i < 0) i = words.length - 1;
+        if (i !== lastWord) {
+          lastWord = i;
+          const w = words[i];
+          const at = sentence.start + w.start;
+          paintReading(sentence, at, at + (w.end - w.start));
+          emit('speech:word', {
+            text: sentence.text,
+            wordStart: w.start,
+            wordEnd: w.end,
+            remainingMs: estimateRemaining(sentence, w.start)
+          });
+        }
+      }
+      audioRaf = requestAnimationFrame(tick);
+    };
+
+    audioEl.play().then(() => {
+      audioRaf = requestAnimationFrame(tick);
+      // Have the next sentence ready before this one runs out.
+      const next = sentences[index + 1];
+      if (next) {
+        window.api.tts.synth({ voiceId, text: speakableText(next.text), rate: speech.rate }).catch(() => {});
+      }
+    }).catch(() => {
+      if (token === audioToken) { toast('Could not start playback.'); stop(); }
+    });
+  }).catch((err) => {
+    if (token !== audioToken) return;
+    const msg = String((err && err.message) || err);
+    if (/not installed/i.test(msg)) {
+      toast('That neural voice is no longer installed — using the system voice.');
+      speech.voiceURI = null;
+      window.api.settings.set({ speechVoice: null }).catch(() => {});
+      if (speech.playing) speakCurrent();
+    } else {
+      toast(`Voice error: ${msg}`);
+      stop();
+    }
+  });
+}
+
 function speakCurrent() {
   const sentence = sentences[index];
   if (!sentence) return advancePage();
 
   // Spoken text gets the same clean-up as the cached text; the DOM keeps the
   // hyphens and ligatures the page was typeset with.
-  utterance = new SpeechSynthesisUtterance(speakableText(sentence.text));
-  const voice = pickVoice();
-  if (voice) {
-    utterance.voice = voice;
-    utterance.lang = voice.lang;
+  const neural = piperVoiceId();
+  if (neural) {
+    stopAudio();
+    stopping = true;
+    synth.cancel();
+    stopping = false;
+    // Shared caption work happens below for both engines, then Piper takes over.
   }
-  utterance.rate = speech.rate;
+
+  utterance = neural ? null : new SpeechSynthesisUtterance(speakableText(sentence.text));
+  if (utterance) {
+    const voice = pickVoice();
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    }
+    utterance.rate = speech.rate;
+  }
 
   wordAt = [0, 0];
   paintReading(sentence, 0, 0);
@@ -211,6 +327,8 @@ function speakCurrent() {
     page: readingPage,
     remainingMs: estimateRemaining(sentence, 0)
   });
+
+  if (neural) return speakPiper(sentence, neural);
   // The scroll above can trigger a re-render; repaint once it has settled,
   // keeping whatever word the voice has reached by then.
   requestAnimationFrame(() => setTimeout(() => {
@@ -239,6 +357,9 @@ function speakCurrent() {
     else advancePage();
   };
 
+  utterance.onstarted = false;
+  utterance.onstart = () => { utterance.onstarted = true; };
+
   utterance.onerror = (e) => {
     // "interrupted" is what cancel() produces; it isn't a failure.
     if (stopping || (e.error && /interrupted|canceled|cancelled/i.test(e.error))) return;
@@ -246,7 +367,19 @@ function speakCurrent() {
     stop();
   };
 
+  // Chromium quietly drops an utterance queued straight after cancel(), and
+  // sometimes sits in a stuck paused state. Nudge it, then retry once if the
+  // utterance never started.
+  synth.resume();
   synth.speak(utterance);
+  const u = utterance;
+  setTimeout(() => {
+    if (stopping || u !== utterance || u.onstarted) return;
+    if (!synth.speaking && !synth.pending) {
+      synth.resume();
+      synth.speak(u);
+    }
+  }, 450);
 }
 
 /** What the voice should say for a run of on-page text. */
@@ -306,11 +439,27 @@ async function advancePage() {
 
 export async function play(fromPage) {
   if (!state.pdf) return toast('Open a PDF first.');
-  if (speech.paused && synth.paused) {
-    synth.resume();
+  if (speech.paused) {
+    if (audioEl) {
+      audioEl.play().catch(() => {});
+      speech.paused = false;
+      speech.playing = true;
+      emit('speech:changed');
+      return;
+    }
+    if (synth.paused) {
+      synth.resume();
+      speech.paused = false;
+      speech.playing = true;
+      emit('speech:changed');
+      return;
+    }
+    // Paused with nothing resumable (the engine changed underneath) —
+    // restart the current sentence instead of doing nothing.
     speech.paused = false;
     speech.playing = true;
     emit('speech:changed');
+    speakCurrent();
     return;
   }
 
@@ -335,7 +484,8 @@ export async function play(fromPage) {
 
 export function pause() {
   if (!speech.playing) return;
-  synth.pause();
+  if (audioEl) audioEl.pause();
+  else synth.pause();
   speech.paused = true;
   speech.playing = false;
   emit('speech:changed');
@@ -344,6 +494,7 @@ export function pause() {
 export function stop() {
   stopping = true;
   synth.cancel();
+  stopAudio();
   stopping = false;
   speech.playing = false;
   speech.paused = false;
@@ -367,6 +518,7 @@ export function skip(delta) {
   index = next;
   stopping = true;
   synth.cancel();
+  stopAudio();
   stopping = false;
   if (speech.playing) speakCurrent();
   else paintReading(sentences[index], 0, 0);
@@ -384,6 +536,7 @@ export function jumpToSentence(i, { keepPlaying = true } = {}) {
   pageStartedAt = Date.now();
   stopping = true;
   synth.cancel();
+  stopAudio();
   stopping = false;
   if (keepPlaying && speech.playing) speakCurrent();
   else {
@@ -508,6 +661,7 @@ export function setRate(rate) {
   if (speech.playing) {
     stopping = true;
     synth.cancel();
+    stopAudio();
     stopping = false;
     speakCurrent();
   }
@@ -520,6 +674,7 @@ export function setVoice(uri) {
   if (speech.playing) {
     stopping = true;
     synth.cancel();
+    stopAudio();
     stopping = false;
     speakCurrent();
   }
