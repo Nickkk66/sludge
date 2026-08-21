@@ -517,15 +517,20 @@ export async function play(fromPage) {
       emit('speech:changed');
       return;
     }
-    if (synth.paused) {
+    // Chromium's synth.paused sticks at true even after cancel() empties the
+    // queue — resuming then plays nothing. Only trust the pause when there is
+    // actually an utterance to resume.
+    if (synth.paused && (synth.speaking || synth.pending)) {
       synth.resume();
       speech.paused = false;
       speech.playing = true;
       emit('speech:changed');
       return;
     }
-    // Paused with nothing resumable (the engine changed underneath) —
-    // restart the current sentence instead of doing nothing.
+    // Nothing resumable (a voice change discarded it) — restart the sentence.
+    stopping = true;
+    synth.cancel();
+    stopping = false;
     speech.paused = false;
     speech.playing = true;
     emit('speech:changed');
