@@ -35,7 +35,9 @@
       "target": [
         "dmg"
       ],
-      "icon": "assets/icon.icns"
-    }
+      "icon": "assets/icon.icns",
+      "identity": null
+    },
+    "afterSign": "scripts/adhoc-sign.js"
   }
 }

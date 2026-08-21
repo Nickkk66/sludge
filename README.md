@@ -192,8 +192,17 @@ npm start -- "/path/to/book.pdf"
 npm run dist
 ```
 
-The `.dmg` and `.zip` land in `dist/`. The build is unsigned, so the first launch needs
-right-click → Open.
+The `.dmg` lands in `dist/`.
+
+Sludge is not signed with an Apple Developer certificate, so macOS quarantines it. On
+recent macOS, right-click → Open is often no longer enough — it can refuse to install at
+all. The reliable way in:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Sludge.app
+```
+
+Run that after dragging the app across, and it will open normally from then on.
 
 ## Setting up the AI
 
