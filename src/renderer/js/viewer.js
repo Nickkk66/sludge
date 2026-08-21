@@ -235,10 +235,18 @@ function bindSelectionFix(textDiv) {
   textDiv.append(end);
 
   let dragging = false;
-  let good = null;        // last selection made while the pointer was on text
+  let good = null;        // last selection made from a real character position
   let restoring = false;  // guards the selectionchange we cause ourselves
+  let lastX = 0;
+  let lastY = 0;
 
-  /** The text span under a point, or null if the point is on no character. */
+  /** True only for a position inside a text run — the layer itself doesn't count. */
+  const onCharacter = (node) => {
+    if (!node || !textDiv.contains(node)) return false;
+    const host = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return !!(host && host.closest && host.closest('.textLayer span'));
+  };
+
   const spanUnder = (x, y) => {
     const node = document.elementFromPoint(x, y);
     if (!node || !node.closest) return null;
@@ -246,17 +254,48 @@ function bindSelectionFix(textDiv) {
     return span && textDiv.contains(span) ? span : null;
   };
 
-  const inThisLayer = (node) => node && textDiv.contains(node);
+  /** The text run nearest a point, weighting the line far above the column. */
+  const nearestSpan = (x, y) => {
+    let best = null;
+    let bestScore = Infinity;
+    for (const span of textDiv.querySelectorAll('span')) {
+      const r = span.getBoundingClientRect();
+      if (!r.height || !span.firstChild) continue;
+      const dy = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+      const dx = x < r.left ? r.left - x : (x > r.right ? x - r.right : 0);
+      const score = dy * 1000 + dx;
+      if (score < bestScore) {
+        bestScore = score;
+        best = span;
+      }
+    }
+    return best;
+  };
 
   /**
-   * True only for a position inside a text run. Node.contains() is true for the
-   * layer itself, so checking containment alone would happily accept the very
-   * runaway this is meant to reject.
+   * The character position the pointer is closest to, when it is not on one.
+   * The point is pulled onto the nearest line and clamped inside it, so
+   * dragging past the end of a line reaches the end of that line rather than
+   * the end of the page.
    */
-  const onCharacter = (node) => {
-    if (!node || !textDiv.contains(node)) return false;
-    const host = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    return !!(host && host.closest && host.closest('.textLayer span'));
+  const caretNearPoint = (x, y) => {
+    const span = nearestSpan(x, y);
+    if (!span || !span.firstChild) return null;
+    const r = span.getBoundingClientRect();
+    const text = span.firstChild;
+
+    // Past either end of the run, aim at the end itself. Probing with
+    // caretRangeFromPoint inside the last glyph lands before it, which leaves
+    // a drag past the end of a line one character short.
+    if (x > r.right) return { node: text, offset: text.length };
+    if (x < r.left) return { node: text, offset: 0 };
+
+    if (!document.caretRangeFromPoint) return { node: text, offset: text.length };
+    const caret = document.caretRangeFromPoint(x, r.top + r.height / 2);
+    if (caret && onCharacter(caret.startContainer)) {
+      return { node: caret.startContainer, offset: caret.startOffset };
+    }
+    return { node: text, offset: text.length };
   };
 
   const remember = (sel) => {
@@ -270,7 +309,6 @@ function bindSelectionFix(textDiv) {
     };
   };
 
-  /** Put the selection back to the last position the pointer was on a character. */
   const restore = (sel) => {
     if (!good || !good.anchorNode.isConnected || !good.focusNode.isConnected) return;
     restoring = true;
@@ -281,12 +319,27 @@ function bindSelectionFix(textDiv) {
     }
   };
 
+  /** Pull a selection that has escaped back onto the nearest real character. */
+  const clampTo = (sel, x, y) => {
+    const at = caretNearPoint(x, y);
+    if (!at) return restore(sel);
+    restoring = true;
+    try {
+      sel.extend(at.node, at.offset);
+      restoring = false;
+      remember(sel);
+    } catch {
+      restoring = false;
+      restore(sel);
+    }
+  };
+
   textDiv.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     dragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
     textDiv.classList.add('selecting');
-    // Establish a baseline from the click point, so a drag that starts by
-    // moving into the gap between lines still has something to fall back to.
     good = null;
     const caret = document.caretRangeFromPoint
       ? document.caretRangeFromPoint(e.clientX, e.clientY)
@@ -302,28 +355,30 @@ function bindSelectionFix(textDiv) {
   });
 
   /**
-   * The selection only moves while the pointer is over an actual character.
-   * pdf.js sizes each span to its glyphs, so the leading between lines belongs
-   * to no span; a pointer there hits the container, and the browser extends
-   * the selection to the end of it — the whole page. Anything that happens off
-   * a character is undone.
+   * pdf.js sizes each span to its glyphs, so the leading between lines and the
+   * space past the end of a line belong to no span. A pointer there hits the
+   * container, and because the container's content ends after the last span in
+   * DOM order rather than reading order, the browser runs the selection to the
+   * end of the page. Off a character, the selection is clamped to the nearest
+   * one instead — which still lets a drag reach the end of its line.
    */
   const onMove = (e) => {
     if (!dragging) return;
+    lastX = e.clientX;
+    lastY = e.clientY;
     const sel = window.getSelection();
     if (!sel) return;
     if (spanUnder(e.clientX, e.clientY)) remember(sel);
-    else restore(sel);
+    else clampTo(sel, e.clientX, e.clientY);
   };
 
-  // A second net: the browser also revises the selection outside pointermove.
+  // The browser also revises the selection outside pointermove.
   const onSelectionChange = () => {
     if (!dragging || restoring) return;
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
-    // A focus that has escaped onto the container is the runaway itself.
     if (onCharacter(sel.focusNode)) remember(sel);
-    else restore(sel);
+    else clampTo(sel, lastX, lastY);
   };
 
   const release = () => {
