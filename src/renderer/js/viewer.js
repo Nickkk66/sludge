@@ -235,8 +235,10 @@ function bindSelectionFix(textDiv) {
   textDiv.append(end);
 
   let dragging = false;
-  let anchorY = 0;
+  let good = null;        // last selection made while the pointer was on text
+  let restoring = false;  // guards the selectionchange we cause ourselves
 
+  /** The text span under a point, or null if the point is on no character. */
   const spanUnder = (x, y) => {
     const node = document.elementFromPoint(x, y);
     if (!node || !node.closest) return null;
@@ -244,62 +246,84 @@ function bindSelectionFix(textDiv) {
     return span && textDiv.contains(span) ? span : null;
   };
 
-  /** The line closest to a point, preferring vertical proximity. */
-  const nearestSpan = (x, y) => {
-    let best = null;
-    let bestScore = Infinity;
-    for (const span of textDiv.querySelectorAll('span')) {
-      const r = span.getBoundingClientRect();
-      if (!r.height || !span.firstChild) continue;
-      const dy = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
-      const dx = x < r.left ? r.left - x : (x > r.right ? x - r.right : 0);
-      // Vertical distance dominates: the line matters more than the column.
-      const score = dy * 1000 + dx;
-      if (score < bestScore) {
-        bestScore = score;
-        best = span;
-      }
+  const inThisLayer = (node) => node && textDiv.contains(node);
+
+  /**
+   * True only for a position inside a text run. Node.contains() is true for the
+   * layer itself, so checking containment alone would happily accept the very
+   * runaway this is meant to reject.
+   */
+  const onCharacter = (node) => {
+    if (!node || !textDiv.contains(node)) return false;
+    const host = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return !!(host && host.closest && host.closest('.textLayer span'));
+  };
+
+  const remember = (sel) => {
+    if (!sel.rangeCount) return;
+    if (!onCharacter(sel.anchorNode) || !onCharacter(sel.focusNode)) return;
+    good = {
+      anchorNode: sel.anchorNode,
+      anchorOffset: sel.anchorOffset,
+      focusNode: sel.focusNode,
+      focusOffset: sel.focusOffset
+    };
+  };
+
+  /** Put the selection back to the last position the pointer was on a character. */
+  const restore = (sel) => {
+    if (!good || !good.anchorNode.isConnected || !good.focusNode.isConnected) return;
+    restoring = true;
+    try {
+      sel.setBaseAndExtent(good.anchorNode, good.anchorOffset, good.focusNode, good.focusOffset);
+    } catch { /* the nodes moved out from under us */ } finally {
+      restoring = false;
     }
-    return best;
   };
 
   textDiv.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     dragging = true;
-    anchorY = e.clientY;
     textDiv.classList.add('selecting');
+    // Establish a baseline from the click point, so a drag that starts by
+    // moving into the gap between lines still has something to fall back to.
+    good = null;
+    const caret = document.caretRangeFromPoint
+      ? document.caretRangeFromPoint(e.clientX, e.clientY)
+      : null;
+    if (caret && onCharacter(caret.startContainer)) {
+      good = {
+        anchorNode: caret.startContainer,
+        anchorOffset: caret.startOffset,
+        focusNode: caret.startContainer,
+        focusOffset: caret.startOffset
+      };
+    }
   });
 
+  /**
+   * The selection only moves while the pointer is over an actual character.
+   * pdf.js sizes each span to its glyphs, so the leading between lines belongs
+   * to no span; a pointer there hits the container, and the browser extends
+   * the selection to the end of it — the whole page. Anything that happens off
+   * a character is undone.
+   */
   const onMove = (e) => {
     if (!dragging) return;
     const sel = window.getSelection();
+    if (!sel) return;
+    if (spanUnder(e.clientX, e.clientY)) remember(sel);
+    else restore(sel);
+  };
+
+  // A second net: the browser also revises the selection outside pointermove.
+  const onSelectionChange = () => {
+    if (!dragging || restoring) return;
+    const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
-
-    const over = spanUnder(e.clientX, e.clientY);
-    if (over) {
-      // On a line the browser is usually right, but if the focus still landed
-      // on the container the selection is already running away — pull it back
-      // onto the line under the pointer.
-      const focus = sel.focusNode;
-      const focusInSpan = focus && (focus.nodeType === Node.TEXT_NODE
-        ? focus.parentElement && focus.parentElement.closest('.textLayer span')
-        : focus.closest && focus.closest('.textLayer span'));
-      if (focusInSpan || !over.firstChild) return;
-      try {
-        sel.extend(over.firstChild, e.clientY >= anchorY ? over.firstChild.length : 0);
-      } catch { /* nothing sensible to clamp to */ }
-      return;
-    }
-
-    // In the leading between lines the pointer hits the container, and the
-    // browser runs the selection to the end of it. Pin it to the nearest line
-    // instead, in the direction the drag is going.
-    const span = nearestSpan(e.clientX, e.clientY);
-    if (!span || !span.firstChild) return;
-    const downward = e.clientY >= anchorY;
-    try {
-      sel.extend(span.firstChild, downward ? span.firstChild.length : 0);
-    } catch { /* selection spans an unexpected node; leave it alone */ }
+    // A focus that has escaped onto the container is the runaway itself.
+    if (onCharacter(sel.focusNode)) remember(sel);
+    else restore(sel);
   };
 
   const release = () => {
@@ -311,6 +335,7 @@ function bindSelectionFix(textDiv) {
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', release);
   window.addEventListener('pointercancel', release);
+  document.addEventListener('selectionchange', onSelectionChange);
 }
 
 function evictFarPages() {
