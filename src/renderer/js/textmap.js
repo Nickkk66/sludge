@@ -95,5 +95,21 @@ export function splitSentences(text, { minLength = 2 } = {}) {
     out.push({ text: body, start: m.index + lead, end: m.index + lead + body.length });
     if (re.lastIndex === m.index) re.lastIndex++;
   }
-  return out;
+
+  // A period after an abbreviation is not the end of a sentence — "Between
+  // A.D. 300 and 800" was being read as two chopped fragments. Merge a piece
+  // ending in a known abbreviation (or a single capital, as in initials) with
+  // whatever follows it.
+  const ABBREV = /(?:\b(?:A\.D|B\.C|U\.S|U\.K|Mr|Mrs|Ms|Dr|St|Jr|Sr|Prof|Gen|Col|Sgt|vs|etc|approx|dept|est|e\.g|i\.e|no|vol|ch|pp?)|\b[A-Z])\.$/;
+  const merged = [];
+  for (const piece of out) {
+    const prev = merged[merged.length - 1];
+    if (prev && ABBREV.test(prev.text) && piece.start - prev.end <= 2) {
+      prev.text = text.slice(prev.start, piece.end).trim();
+      prev.end = piece.end;
+    } else {
+      merged.push({ ...piece });
+    }
+  }
+  return merged;
 }

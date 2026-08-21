@@ -716,21 +716,42 @@ export function offsetAtPoint(pageNum, clientX, clientY) {
   if (readingPage !== pageNum || !mapped) return null;
   if (!ensureMapping()) return null;
 
+  // Nearest text run to the point, walked run-by-run rather than slot-by-slot.
   let best = null;
   let bestDist = Infinity;
-  for (let i = 0; i < mapped.map.length; i++) {
-    const slot = mapped.map[i];
-    const host = slot.node.parentElement;
-    if (!host) continue;
-    const r = host.getBoundingClientRect();
-    // Distance to the span's box, zero when the click is inside it.
-    const dx = clientX < r.left ? r.left - clientX : (clientX > r.right ? clientX - r.right : 0);
-    const dy = clientY < r.top ? r.top - clientY : (clientY > r.bottom ? clientY - r.bottom : 0);
-    const d = dx * dx + dy * dy;
-    if (d < bestDist) { bestDist = d; best = i; }
-    if (d === 0) break;
+  let i = 0;
+  while (i < mapped.map.length) {
+    const node = mapped.map[i].node;
+    let j = i;
+    while (j < mapped.map.length && mapped.map[j].node === node) j += 1;
+    const host = node.parentElement;
+    if (host) {
+      const r = host.getBoundingClientRect();
+      const dx = clientX < r.left ? r.left - clientX : (clientX > r.right ? clientX - r.right : 0);
+      const dy = clientY < r.top ? r.top - clientY : (clientY > r.bottom ? clientY - r.bottom : 0);
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        best = { first: i, last: j - 1, rect: r };
+        if (d === 0) break;
+      }
+    }
+    i = j;
   }
-  return best;
+  if (!best) return null;
+
+  // Land on the character under the pointer, not the start of the line — a
+  // line can hold the end of one sentence and the start of the next, and the
+  // click should honour which half was hit.
+  const width = Math.max(1, best.rect.width);
+  const frac = Math.max(0, Math.min(1, (clientX - best.rect.left) / width));
+  let off = best.first + Math.round(frac * (best.last - best.first));
+
+  // Never land on the boundary space between runs: it belongs to the previous
+  // sentence, and returning it sent clicks one whole sentence backwards.
+  while (off <= best.last && /\s/.test(mapped.flat[off])) off += 1;
+  if (off > best.last) off = best.last;
+  return off;
 }
 
 /** The offset of a DOM node/offset pair, for turning a selection into a start point. */
